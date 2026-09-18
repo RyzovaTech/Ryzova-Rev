@@ -1,76 +1,89 @@
-# Visual Studio Code - Open Source ("Code - OSS")
-[![Feature Requests](https://img.shields.io/github/issues/microsoft/vscode/feature-request.svg)](https://github.com/microsoft/vscode/issues?q=is%3Aopen+is%3Aissue+label%3Afeature-request+sort%3Areactions-%2B1-desc)
-[![Bugs](https://img.shields.io/github/issues/microsoft/vscode/bug.svg)](https://github.com/microsoft/vscode/issues?utf8=✓&q=is%3Aissue+is%3Aopen+label%3Abug)
+# Ryzova Rev
 
-## The Repository
+Ryzova Rev is a local-first desktop software engineering workspace being developed by RyzovaTech. It uses the open-source Code - OSS codebase as its editor and desktop foundation, while Ryzova Rev adds its own product identity and an AI engineering layer.
 
-This repository ("`Code - OSS`") is where we (Microsoft) develop the [Visual Studio Code](https://code.visualstudio.com) product together with the community. Not only do we work on code and issues here, but we also publish our [roadmap](https://github.com/microsoft/vscode/wiki/Roadmap), [monthly iteration plans](https://github.com/microsoft/vscode/wiki/Iteration-Plans), and our [endgame plans](https://github.com/microsoft/vscode/wiki/Running-the-Endgame). This source code is available to everyone under the standard [MIT license](https://github.com/microsoft/vscode/blob/main/LICENSE.txt).
+> **Project status:** active development. The current repository contains the Code - OSS foundation and the first Ryzova Rev product-branding layer. AI assistant, engineering-agent, verification, integrated preview, packaging, and release work are being developed in later roadmap phases.
 
-## Visual Studio Code
+## Product direction
 
-<p align="center">
-  <img alt="VS Code in action" src="https://github.com/user-attachments/assets/56af271c-949d-454c-a3ea-16188c063414">
-</p>
+Ryzova Rev is designed around a simple engineering loop:
 
-[Visual Studio Code](https://code.visualstudio.com) is a distribution of the `Code - OSS` repository with Microsoft-specific customizations released under a traditional [Microsoft product license](https://code.visualstudio.com/License/).
+```text
+Understand requirement
+→ Analyze project
+→ Create engineering plan
+→ Implement
+→ Run
+→ Test
+→ Detect errors
+→ Repair
+→ Re-test
+→ Verify
+→ Git checkpoint
+→ Ready for delivery
+```
 
-[Visual Studio Code](https://code.visualstudio.com) combines the simplicity of a code editor with what developers need for their core edit-build-debug cycle. It provides comprehensive code editing, navigation, and understanding support along with lightweight debugging, a rich extensibility model, and lightweight integration with existing tools.
+The long-term architecture separates the editor foundation from Ryzova-specific intelligence:
 
-Visual Studio Code is updated monthly with new features and bug fixes. You can download it for Windows, macOS, and Linux on the [Visual Studio Code website](https://code.visualstudio.com/Download). To get the latest releases every day, install the [Insiders build](https://code.visualstudio.com/insiders).
+```text
+Ryzova Rev
+├── Code - OSS foundation
+│   ├── Editor
+│   ├── File system
+│   ├── Terminal
+│   ├── Git
+│   ├── Debugging
+│   └── Extension infrastructure
+└── Ryzova intelligence layer
+    ├── Project understanding
+    ├── Context management
+    ├── Rev Assistant
+    ├── Engineering agents
+    ├── Tool execution
+    ├── Test / repair / verification
+    └── Integrated project preview
+```
 
-## Contributing
+## Development model
 
-There are many ways in which you can participate in this project, for example:
+The repository is the source of truth for Ryzova Rev development. The intended workflow is:
 
-* [Submit bugs and feature requests](https://github.com/microsoft/vscode/issues), and help us verify them as they are checked in
-* Review [source code changes](https://github.com/microsoft/vscode/pulls)
-* Review the [documentation](https://github.com/microsoft/vscode-docs) and make pull requests for anything from typos to new content.
+```text
+Local development / Codex
+→ Git commit
+→ GitHub
+→ CI and platform builds
+→ GitHub Releases
+→ Windows / macOS / Linux installers
+```
 
-If you are interested in fixing issues and contributing directly to the codebase, please see the document [How to Contribute](https://github.com/microsoft/vscode/wiki/How-to-Contribute), which covers the following:
+The local Git setup can keep the original Code - OSS repository as an `upstream` remote so upstream changes can be reviewed and integrated deliberately.
 
-* [How to build and run from source](https://github.com/microsoft/vscode/wiki/How-to-Contribute)
-* [The development workflow, including debugging and running tests](https://github.com/microsoft/vscode/wiki/How-to-Contribute#debugging)
-* [Coding guidelines](https://github.com/microsoft/vscode/wiki/Coding-Guidelines)
-* [Submitting pull requests](https://github.com/microsoft/vscode/wiki/How-to-Contribute#pull-requests)
-* [Finding an issue to work on](https://github.com/microsoft/vscode/wiki/How-to-Contribute#where-to-contribute)
-* [Contributing to translations](https://aka.ms/vscodeloc)
+## Roadmap
 
-## Feedback
+Ryzova Rev development follows ten phases:
 
-* Ask a question on [Stack Overflow](https://stackoverflow.com/questions/tagged/vscode)
-* [Request a new feature](CONTRIBUTING.md)
-* Upvote [popular feature requests](https://github.com/microsoft/vscode/issues?q=is%3Aopen+is%3Aissue+label%3Afeature-request+sort%3Areactions-%2B1-desc)
-* [File an issue](https://github.com/microsoft/vscode/issues)
-* Connect with the extension author community on [GitHub Discussions](https://github.com/microsoft/vscode-discussions/discussions) or [Slack](https://aka.ms/vscode-dev-community)
-* Follow [@code](https://x.com/code) and let us know what you think!
+1. Foundation and GitHub setup
+2. Ryzova Rev branding shell
+3. Local build and development preview
+4. Rev core architecture layer
+5. Rev Assistant and built-in intelligence
+6. Engineering agent system
+7. Run / test / repair / verify loop
+8. Integrated live preview and project experience
+9. Production quality, security, and installer system
+10. Ryzova Rev v1.0 release
 
-See our [wiki](https://github.com/microsoft/vscode/wiki/Feedback-Channels) for a description of each of these channels and information on some other available community-driven channels.
+## Upstream and attribution
 
-## Related Projects
+Ryzova Rev is built from the open-source **Code - OSS** repository maintained by Microsoft and the community:
 
-Many of the core components and extensions to VS Code live in their own repositories on GitHub. For example, the [node debug adapter](https://github.com/microsoft/vscode-node-debug) and the [mono debug adapter](https://github.com/microsoft/vscode-mono-debug) repositories are separate from each other. For a complete list, please visit the [Related Projects](https://github.com/microsoft/vscode/wiki/Related-Projects) page on our [wiki](https://github.com/microsoft/vscode/wiki).
+- Upstream source: https://github.com/microsoft/vscode
+- Upstream license: MIT
+- Original copyright notices and required attribution are retained in the source.
 
-## Bundled Extensions
-
-VS Code includes a set of built-in extensions located in the [extensions](extensions) folder, including grammars and snippets for many languages. Extensions that provide rich language support (inline suggestions, Go to Definition) for a language have the suffix `language-features`. For example, the `json` extension provides coloring for `JSON` and the `json-language-features` extension provides rich language support for `JSON`.
-
-## Development Container
-
-This repository includes a Visual Studio Code Dev Containers / GitHub Codespaces development container.
-
-* For [Dev Containers](https://aka.ms/vscode-remote/download/containers), use the **Dev Containers: Clone Repository in Container Volume...** command, which creates a Docker volume for better disk I/O on macOS and Windows.
-  * If you already have VS Code and Docker installed, you can also click [here](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/microsoft/vscode) to get started. This will cause VS Code to automatically install the Dev Containers extension if needed, clone the source code into a container volume, and spin up a dev container for use.
-
-* For Codespaces, install the [GitHub Codespaces](https://marketplace.visualstudio.com/items?itemName=GitHub.codespaces) extension in VS Code, and use the **Codespaces: Create New Codespace** command.
-
-Docker / the Codespace should have at least **4 cores and 6 GB of RAM (8 GB recommended)** to run a full build. See the [development container README](.devcontainer/README.md) for more information.
-
-## Code of Conduct
-
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/). For more information, see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
+Ryzova Rev is a separate project and should not be confused with Microsoft's branded Visual Studio Code distribution.
 
 ## License
 
-Copyright (c) Microsoft Corporation. All rights reserved.
-
-Licensed under the [MIT](LICENSE.txt) license.
+The Code - OSS-derived source in this repository is provided under the MIT license contained in [LICENSE.txt](LICENSE.txt). Third-party components may include their own notices and licenses; see [ThirdPartyNotices.txt](ThirdPartyNotices.txt).
