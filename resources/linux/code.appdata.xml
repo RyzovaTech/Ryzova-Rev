@@ -6,5 +6,7 @@
 	<name>@@NAME_LONG@@</name>
 	<url type="homepage">https://github.com/RyzovaTech/Ryzova-Rev</url>
 	<summary>Ryzova Rev — local-first AI software engineering workspace.</summary>
-	<description>\n\t\t<p>Ryzova Rev is a local-first desktop software engineering workspace built on Code - OSS, designed to combine project understanding, development tools, AI-assisted engineering, execution, testing, repair, and verification.</p>\n\t</description>
+	<description>
+		<p>Ryzova Rev is a local-first desktop software engineering workspace built on Code - OSS, designed to combine project understanding, development tools, AI-assisted engineering, execution, testing, repair, and verification.</p>
+	</description>
 </component>
