@@ -4,15 +4,7 @@
 	<metadata_license>@@LICENSE@@</metadata_license>
 	<project_license>@@LICENSE@@</project_license>
 	<name>@@NAME_LONG@@</name>
-	<url type="homepage">https://code.visualstudio.com</url>
-	<summary>Visual Studio Code. Code editing. Redefined.</summary>
-	<description>
-		<p>Visual Studio Code is a new choice of tool that combines the simplicity of a code editor with what developers need for the core edit-build-debug cycle. See https://code.visualstudio.com/docs/setup/linux for installation instructions and FAQ.</p>
-	</description>
-	<screenshots>
-		<screenshot type="default">
-			<image>https://code.visualstudio.com/home/home-screenshot-linux-lg.png</image>
-			<caption>Editing TypeScript and searching for extensions</caption>
-		</screenshot>
-	</screenshots>
+	<url type="homepage">https://github.com/RyzovaTech/Ryzova-Rev</url>
+	<summary>Ryzova Rev — local-first AI software engineering workspace.</summary>
+	<description>\n\t\t<p>Ryzova Rev is a local-first desktop software engineering workspace built on Code - OSS, designed to combine project understanding, development tools, AI-assisted engineering, execution, testing, repair, and verification.</p>\n\t</description>
 </component>
