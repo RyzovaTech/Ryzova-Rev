@@ -23,6 +23,13 @@ const copyrightHeaderLines = [
 	' *--------------------------------------------------------------------------------------------*/',
 ];
 
+const ryzovaCopyrightHeaderLines = [
+	'/*---------------------------------------------------------------------------------------------',
+	' *  Copyright (c) RyzovaTech. All rights reserved.',
+	' *  Licensed under the MIT License. See License.txt in the project root for license information.',
+	' *--------------------------------------------------------------------------------------------*/',
+];
+
 interface VinylFileWithLines extends VinylFile {
 	__lines: string[];
 }
@@ -161,9 +168,13 @@ export function hygiene(some: NodeJS.ReadWriteStream | string[] | undefined, run
 
 	const copyrights = es.through(function (file: VinylFileWithLines) {
 		const lines = file.__lines;
+		const normalizedPath = file.relative.replace(/\\/g, '/');
+		const expectedHeaderLines = normalizedPath.startsWith('src/vs/platform/ryzova/')
+			? ryzovaCopyrightHeaderLines
+			: copyrightHeaderLines;
 
-		for (let i = 0; i < copyrightHeaderLines.length; i++) {
-			if (lines[i] !== copyrightHeaderLines[i]) {
+		for (let i = 0; i < expectedHeaderLines.length; i++) {
+			if (lines[i] !== expectedHeaderLines[i]) {
 				console.error(file.relative + ': Missing or bad copyright statement');
 				errorCount++;
 				break;
