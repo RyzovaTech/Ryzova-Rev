@@ -58,15 +58,24 @@ export class RevIntelligenceRegistryService implements IRevIntelligenceRegistryS
 		const candidates: { provider: IRevIntelligenceProvider; model: IRevIntelligenceModelDescriptor }[] = [];
 
 		for (const provider of assistantProviders) {
-			const availability = await provider.availability();
-			if (!availability.available) {
-				continue;
-			}
-
-			for (const model of await provider.models()) {
-				if (model.providerId === provider.descriptor.id && model.task === task) {
-					candidates.push({ provider, model });
+			try {
+				const availability = await provider.availability();
+				if (!availability.available) {
+					continue;
 				}
+
+				for (const model of await provider.models()) {
+					if (
+						model.providerId === provider.descriptor.id
+						&& model.task === task
+						&& (task !== 'vision' || model.supportsVision === true)
+					) {
+						candidates.push({ provider, model });
+					}
+				}
+			} catch {
+				// A broken provider must not prevent another built-in Rev Assistant provider from serving the task.
+				continue;
 			}
 		}
 
