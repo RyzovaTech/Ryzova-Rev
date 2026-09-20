@@ -75,11 +75,12 @@ export class RevCoreService extends Disposable implements IRevCoreService {
 
 		const execution = transitionRevExecution(current, nextState, Date.now(), failureMessage);
 		const terminal = nextState === 'completed' || nextState === 'failed' || nextState === 'cancelled';
-		const phase: RevCorePhase = nextState === 'failed'
-			? 'error'
-			: terminal
-				? (this._snapshot.project ? 'project-ready' : 'idle')
-				: 'executing';
+		let phase: RevCorePhase = 'executing';
+		if (nextState === 'failed') {
+			phase = 'error';
+		} else if (terminal) {
+			phase = this._snapshot.project ? 'project-ready' : 'idle';
+		}
 
 		this.update({
 			phase,
