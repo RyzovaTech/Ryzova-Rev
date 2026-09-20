@@ -77,7 +77,7 @@ suite('Ryzova Rev Core Architecture', function () {
 		}).decision, 'ask');
 	});
 
-	test('tool registry rejects duplicate IDs and returns deterministic ordering', function () {
+	test('tool registry rejects duplicate IDs and returns deterministic ordering', async function () {
 		const registry = new RevToolRegistryService();
 		const controller = new AbortController();
 		const context = {

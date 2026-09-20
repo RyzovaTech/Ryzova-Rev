@@ -4,9 +4,10 @@ This directory is the stable boundary between the Code - OSS platform and Ryzova
 
 ## Status
 
-**Phase 4 — Rev Core Architecture Layer: complete.**
+**Phase 4 — Rev Core Architecture Layer: complete.**  
+**Phase 5 — Rev Assistant + Built-in Intelligence: in progress.**
 
-The Phase 4 boundary is intentionally small. Later Rev features should extend these contracts and services instead of introducing parallel runtime state or scattering Ryzova-specific logic across upstream Code - OSS modules.
+Phase 5 extends the Phase 4 boundary with a dedicated assistant intelligence path that is intentionally separate from external engineering models. Rev Assistant must remain available independently of BYOK/local coding-model configuration, while engineering-model execution stays reserved for Phase 6.
 
 ## Principles
 
@@ -27,6 +28,17 @@ The Phase 4 boundary is intentionally small. Later Rev features should extend th
 - `revTools.ts` — tool metadata and registry service.
 - `revCoreService.ts` — central Rev runtime state service.
 - `revServices.ts` — delayed service registration.
+
+## Phase 5 foundation
+
+- `revIntelligence.ts` — assistant-model/provider contracts and task roles.
+- `revIntelligenceRegistry.ts` — assistant-only provider/model routing.
+- `revAssistant.ts` — conversation intent contracts and the Rev Assistant charter.
+- `revAssistantService.ts` — conversation state and model invocation.
+- `revServices.ts` — delayed registration for assistant intelligence services.
+- Assistant routing excludes providers scoped as `engineering`.
+- Code authoring is disabled unless the user explicitly opts in for that request.
+- Rev Assistant does not execute workspace tools directly; Phase 6 engineering agents will use the Rev tool layer.
 
 ## Architecture guarantees
 
