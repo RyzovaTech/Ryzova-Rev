@@ -154,8 +154,14 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 			}
 
 			this.setStatus({ state: 'loading', supported: true, activeModelAlias: alias, message: `Loading ${alias}…` });
+			this.throwIfCancelled(cancellationKey);
 			await this.unloadOtherModels(alias);
-			await model.load();
+			this.throwIfCancelled(cancellationKey);
+			await withTimeout(
+				model.load(),
+				MODEL_LOAD_TIMEOUT_MS,
+				`Loading Rev built-in model ${alias} timed out.`,
+			);
 			if (this.isCancelled(cancellationKey)) {
 				await model.unload().catch(() => { /* best effort */ });
 				throw createCancelledError(cancellationKey);
@@ -245,7 +251,7 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 			this.setStatus({ state: 'ready', supported: true, activeModelAlias: request.modelAlias });
 			return response;
 		} catch (error) {
-			if (!active.cancelled) {
+			if (!active?.cancelled) {
 				this._onDidStreamEvent.fire({
 					type: 'error',
 					requestId: request.requestId,
