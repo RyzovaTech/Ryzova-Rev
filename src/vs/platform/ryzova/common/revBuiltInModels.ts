@@ -30,22 +30,22 @@ export interface IRevBuiltInModelPreference {
 export const REV_BUILT_IN_MODEL_PREFERENCES: readonly IRevBuiltInModelPreference[] = [
 	{
 		task: 'assistant',
-		preferredAliases: ['qwen2.5-1.5b', 'phi-3.5-mini', 'qwen2.5-0.5b'],
+		preferredAliases: ['qwen3.5-2b-text', 'qwen3.5-0.8b', 'qwen2.5-1.5b', 'phi-3.5-mini', 'qwen2.5-0.5b'],
 		fallbackToCompatibleTextModel: true,
 	},
 	{
 		task: 'reasoning',
-		preferredAliases: ['phi-4-mini-reasoning', 'deepseek-r1-7b', 'phi-3.5-mini', 'qwen2.5-1.5b'],
+		preferredAliases: ['qwen3.5-4b', 'phi-4-mini-reasoning', 'deepseek-r1-7b', 'qwen3.5-2b-text', 'phi-3.5-mini', 'qwen2.5-1.5b'],
 		fallbackToCompatibleTextModel: true,
 	},
 	{
 		task: 'code-helper',
-		preferredAliases: ['qwen2.5-coder-1.5b', 'qwen2.5-coder-7b', 'qwen2.5-coder-0.5b', 'qwen2.5-1.5b'],
+		preferredAliases: ['qwen2.5-coder-1.5b', 'qwen3.5-4b', 'qwen2.5-coder-7b', 'qwen2.5-coder-0.5b', 'qwen3.5-2b-text', 'qwen2.5-1.5b'],
 		fallbackToCompatibleTextModel: true,
 	},
 	{
 		task: 'vision',
-		preferredAliases: [],
+		preferredAliases: ['qwen3.5-4b', 'qwen3.5-2b', 'qwen3.5-0.8b', 'qwen3-vl-4b-instruct', 'qwen3-vl-2b-instruct'],
 		requireVision: true,
 	},
 ];
