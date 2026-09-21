@@ -51,7 +51,7 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 
 	constructor(
 		@IRevIntelligenceRegistryService private readonly intelligenceRegistry: IRevIntelligenceRegistryService,
-		@IRevAssistantContextService private readonly assistantContextService?: IRevAssistantContextService,
+		@IRevAssistantContextService private readonly assistantContextService: IRevAssistantContextService,
 	) {
 		super();
 	}
@@ -122,7 +122,7 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 			allowCodeAuthoring: request.intent === 'code-authoring' && request.allowCodeAuthoring === true,
 			...(request.imageReferences === undefined ? {} : { imageReferences: request.imageReferences }),
 		}, async route => {
-			const context = await this.assistantContextService?.buildContext({
+			const context = await this.assistantContextService.buildContext({
 				prompt: request.content,
 				contextWindow: route.model.contextWindow,
 				reservedOutputTokens: route.model.maxOutputTokens,
@@ -135,7 +135,7 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 
 			return [
 				{ role: 'system', content: REV_ASSISTANT_SYSTEM_CHARTER },
-				...(context?.message ? [context.message] : []),
+				...(context.message ? [context.message] : []),
 				...conversationMessages,
 			];
 		}, signal);
