@@ -6,7 +6,8 @@ This directory is the stable boundary between the Code - OSS platform and Ryzova
 
 **Phase 4 — Rev Core Architecture Layer: complete.**  
 **Phase 5 — Rev Assistant + Built-in Intelligence: in progress.**  
-**Phase 5B — Built-in Local Model Runtime: complete.**
+**Phase 5B — Built-in Local Model Runtime: complete.**  
+**Phase 5C — Model Catalog + Routing: complete.**
 
 Phase 5 extends the Phase 4 boundary with a dedicated assistant intelligence path that is intentionally separate from external engineering models. Rev Assistant must remain available independently of BYOK/local coding-model configuration, while engineering-model execution stays reserved for Phase 6.
 
@@ -58,6 +59,18 @@ Phase 5B adds the on-device execution path: Rev can discover, download, load, st
 - Streaming requests are cancellable and guarded by model-load and stream-inactivity timeouts.
 - Built-in code-helper inference still requires explicit code-authoring opt-in.
 - Image-reference input is intentionally not advertised by the provider yet because the current Foundry Local JavaScript chat API accepts text messages only; the existing vision role remains reserved for a later Phase 5 integration rather than silently dropping image input.
+
+### Phase 5C model catalog and routing
+
+- Foundry aliases are normalized by model family, so short aliases and concrete variants such as `qwen3.5-0.8b-generic-cpu` participate in the same routing preference.
+- Task-specific routing ranks assistant, reasoning, and code-helper families independently instead of treating every local chat model as interchangeable.
+- Compatible future catalog models can be used as controlled fallbacks when a preferred family is unavailable.
+- Loaded and cached variants receive deterministic tie-break preference to reduce unnecessary model swaps and downloads.
+- Route constraints can require vision support or a minimum known context window.
+- The built-in provider exposes a bounded fallback set per task rather than a single fragile route.
+- The intelligence registry returns an ordered route list while continuing to exclude engineering-scoped providers from Rev Assistant.
+- Rev Assistant retries the next compatible route when inference fails, but never retries cancellation.
+- Routing behavior is deterministic and covered by unit tests, including variant aliases, context constraints, vision filtering, and inference fallback.
 
 ## Architecture guarantees
 

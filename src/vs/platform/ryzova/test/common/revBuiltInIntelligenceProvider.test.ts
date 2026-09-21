@@ -81,10 +81,12 @@ suite('Ryzova Rev Built-in Intelligence Provider', function () {
 		const provider = new RevBuiltInIntelligenceProvider(runtime);
 
 		const models = await provider.models();
-		assert.deepStrictEqual(models.map(model => model.task), ['assistant', 'reasoning', 'code-helper']);
-		assert.strictEqual(models[0].runtimeModelAlias, 'qwen2.5-1.5b');
-		assert.strictEqual(models[1].runtimeModelAlias, 'qwen2.5-1.5b');
-		assert.strictEqual(models[2].runtimeModelAlias, 'qwen2.5-coder-1.5b');
+		const primary = new Map(models.filter(model => model.routingRank === 0).map(model => [model.task, model]));
+		assert.strictEqual(primary.get('assistant')?.runtimeModelAlias, 'qwen2.5-1.5b');
+		assert.strictEqual(primary.get('reasoning')?.runtimeModelAlias, 'qwen2.5-1.5b');
+		assert.strictEqual(primary.get('code-helper')?.runtimeModelAlias, 'qwen2.5-coder-1.5b');
+		assert.ok(models.some(model => model.task === 'assistant' && model.routingRank === 1));
+		assert.ok(models.every(model => model.priority !== undefined));
 
 		provider.dispose();
 		runtime.dispose();

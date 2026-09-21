@@ -17,8 +17,8 @@ import {
 	REV_ASSISTANT_SYSTEM_CHARTER,
 	revAssistantTaskForIntent,
 } from './revAssistant.js';
-import { IRevIntelligenceMessage, IRevIntelligenceRequest } from './revIntelligence.js';
-import { IRevIntelligenceRegistryService } from './revIntelligenceRegistry.js';
+import { IRevIntelligenceMessage, IRevIntelligenceRequest, IRevIntelligenceResponse } from './revIntelligence.js';
+import { IRevIntelligenceRegistryService, IRevIntelligenceRoute } from './revIntelligenceRegistry.js';
 
 export const IRevAssistantService = createDecorator<IRevAssistantService>('revAssistantService');
 
@@ -101,7 +101,13 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 		this.fireConversation(conversation);
 
 		const task = revAssistantTaskForIntent(request.intent);
-		const route = await this.intelligenceRegistry.resolveAssistantRoute(task);
+		const routes = await this.intelligenceRegistry.resolveAssistantRoutes(task, {
+			requireVision: request.intent === 'visual-analysis',
+		});
+		if (!routes.length) {
+			throw new Error(`No Rev Assistant model is available for task: ${task}.`);
+		}
+
 		const modelMessages: IRevIntelligenceMessage[] = [
 			{ role: 'system', content: REV_ASSISTANT_SYSTEM_CHARTER },
 			...conversation.messages.map(message => ({
@@ -110,16 +116,13 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 			} satisfies IRevIntelligenceMessage)),
 		];
 
-		const modelRequest: IRevIntelligenceRequest = {
-			requestId: generateUuid(),
+		const { route, response } = await this.generateWithFallback(routes, {
 			task,
-			model: route.model,
 			messages: modelMessages,
 			allowCodeAuthoring: request.intent === 'code-authoring' && request.allowCodeAuthoring === true,
 			...(request.imageReferences === undefined ? {} : { imageReferences: request.imageReferences }),
-		};
+		}, signal);
 
-		const response = await route.provider.generate(modelRequest, signal);
 		const assistantMessage: IRevAssistantMessage = {
 			id: generateUuid(),
 			role: 'assistant',
@@ -133,8 +136,39 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 		return {
 			conversation: snapshot,
 			message: assistantMessage,
-			modelId: response.modelId,
+			modelId: response.modelId || route.model.id,
 		};
+	}
+
+	private async generateWithFallback(
+		routes: readonly IRevIntelligenceRoute[],
+		request: Omit<IRevIntelligenceRequest, 'requestId' | 'model'>,
+		signal?: AbortSignal,
+	): Promise<{ readonly route: IRevIntelligenceRoute; readonly response: IRevIntelligenceResponse }> {
+		let lastError: unknown;
+		for (const route of routes) {
+			if (signal?.aborted) {
+				throw createRevAssistantCancelledError();
+			}
+
+			const modelRequest: IRevIntelligenceRequest = {
+				...request,
+				requestId: generateUuid(),
+				model: route.model,
+			};
+			try {
+				const response = await route.provider.generate(modelRequest, signal);
+				return { route, response };
+			} catch (error) {
+				if (signal?.aborted || isCancellationError(error)) {
+					throw error;
+				}
+				lastError = error;
+			}
+		}
+
+		const detail = lastError instanceof Error ? `: ${lastError.message}` : '';
+		throw new Error(`Every compatible Rev Assistant route failed${detail}`);
 	}
 
 	private fireConversation(conversation: IMutableRevAssistantConversation): IRevAssistantConversation {
@@ -151,4 +185,18 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 			messages: conversation.messages.map(message => ({ ...message })),
 		};
 	}
+}
+
+function isCancellationError(error: unknown): boolean {
+	if (!(error instanceof Error)) {
+		return false;
+	}
+	const code = (error as Error & { code?: string }).code;
+	return code === 'ERR_REV_CANCELLED' || error.name === 'AbortError' || /cancelled|canceled/i.test(error.message);
+}
+
+function createRevAssistantCancelledError(): Error {
+	const error = new Error('Rev Assistant request was cancelled.');
+	(error as Error & { code?: string }).code = 'ERR_REV_CANCELLED';
+	return error;
 }
