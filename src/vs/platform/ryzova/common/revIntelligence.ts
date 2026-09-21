@@ -25,6 +25,8 @@ export interface IRevIntelligenceModelDescriptor {
 	readonly contextWindow?: number;
 	readonly maxOutputTokens?: number;
 	readonly supportsVision?: boolean;
+	/** Runtime-specific local alias. Kept out of user-facing IDs so providers can swap variants safely. */
+	readonly runtimeModelAlias?: string;
 }
 
 export interface IRevIntelligenceProviderDescriptor {
