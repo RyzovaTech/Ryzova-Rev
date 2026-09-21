@@ -62,6 +62,7 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 	private readonly _loadedModels = new Map<string, FoundryModel>();
 	private readonly _activeStreams = new Map<string, IActiveStream>();
 	private readonly _downloadControllers = new Map<string, AbortController>();
+	private readonly _cancelledRequests = new Set<string>();
 	private _activeRequestId: string | undefined;
 
 	async getStatus(): Promise<IRevBuiltInRuntimeStatus> {
@@ -72,7 +73,9 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 		this.assertSupported();
 		this.setStatus({ state: 'discovering', supported: true, message: 'Discovering local models…' });
 		try {
+			this.throwIfCancelled(cancellationKey);
 			const manager = await this.getManager();
+			this.throwIfCancelled(cancellationKey);
 			const cached = await manager.catalog.getCachedModels();
 			let models = cached;
 			try {
@@ -120,6 +123,7 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 			}
 
 			const model = await manager.catalog.getModel(alias);
+			this.throwIfCancelled(cancellationKey);
 			if (!model) {
 				throw new Error(`Foundry Local model was not found: ${alias}`);
 			}
@@ -147,6 +151,10 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 			this.setStatus({ state: 'loading', supported: true, activeModelAlias: alias, message: `Loading ${alias}…` });
 			await this.unloadOtherModels(alias);
 			await model.load();
+			if (this.isCancelled(cancellationKey)) {
+				await model.unload().catch(() => { /* best effort */ });
+				throw createCancelledError(cancellationKey);
+			}
 			this._loadedModels.set(alias, model);
 			this.setStatus({ state: 'ready', supported: true, activeModelAlias: alias });
 			return this.toCatalogModel(model);
@@ -232,6 +240,7 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 		} finally {
 			this._activeStreams.delete(request.requestId);
 			this._activeRequestId = undefined;
+			this._cancelledRequests.delete(request.requestId);
 			if (active.cancelled && iterator.return) {
 				await iterator.return().catch(() => { /* best effort */ });
 			}
@@ -239,6 +248,7 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 	}
 
 	async cancel(requestId: string): Promise<void> {
+		this._cancelledRequests.add(requestId);
 		const controller = this._downloadControllers.get(requestId);
 		controller?.abort();
 
@@ -279,6 +289,7 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 			void active.iterator.return?.();
 		}
 		this._activeStreams.clear();
+		this._cancelledRequests.clear();
 		for (const model of this._loadedModels.values()) {
 			void model.unload();
 		}
@@ -297,6 +308,16 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 			throw new Error(`Rev built-in model failed to load: ${alias}`);
 		}
 		return loaded;
+	}
+
+	private isCancelled(cancellationKey: string): boolean {
+		return !cancellationKey.startsWith('prepare:') && this._cancelledRequests.has(cancellationKey);
+	}
+
+	private throwIfCancelled(cancellationKey: string): void {
+		if (this.isCancelled(cancellationKey)) {
+			throw createCancelledError(cancellationKey);
+		}
 	}
 
 	private async unloadOtherModels(aliasToKeep: string): Promise<void> {
