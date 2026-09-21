@@ -101,12 +101,14 @@ export function selectRevBuiltInModel(
 		if (ranked.length) {
 			return ranked[0].model;
 		}
-		if (!preference.fallbackToCompatibleTextModel) {
+		if (!preference.fallbackToCompatibleTextModel && !preference.requireVision) {
 			return undefined;
 		}
 	}
 
-	const fallback = eligible.filter(isCompatibleTextChatModel);
+	const fallback = preference.requireVision
+		? eligible
+		: eligible.filter(isCompatibleTextChatModel);
 	if (!fallback.length) {
 		return undefined;
 	}
