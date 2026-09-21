@@ -3,8 +3,13 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import * as os from 'os';
+import { CancellationToken } from '../../../base/common/cancellation.js';
 import { Emitter, Event } from '../../../base/common/event.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
+import { join } from '../../../base/common/path.js';
+import product from '../../product/common/product.js';
+import { ensureFoundryLocalRuntime } from '../../localTranscription/node/foundryLocalRuntime.js';
 import {
 	IRevBuiltInModelRuntimeService,
 	IRevBuiltInRuntimeRequest,
@@ -269,9 +274,30 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 		if (this._manager) {
 			return this._manager;
 		}
+
+		const revDataRoot = join(os.homedir(), product.dataFolderName, 'rev-intelligence');
+		const runtime = product.dictationRuntime;
+		if (runtime) {
+			this.setStatus({
+				state: 'loading',
+				supported: true,
+				message: 'Preparing Rev local intelligence runtime…',
+			});
+			const overrideDir = await ensureFoundryLocalRuntime(
+				join(revDataRoot, 'runtime'),
+				runtime,
+				CancellationToken.None,
+				message => this.setStatus({ state: 'loading', supported: true, message }),
+			);
+			process.env.VSCODE_FOUNDRY_LOCAL_NATIVE_DIR = overrideDir;
+		}
+
 		this._sdk ??= await import('foundry-local-sdk');
 		this._manager = this._sdk.FoundryLocalManager.create({
 			appName: 'ryzova-rev',
+			appDataDir: revDataRoot,
+			modelCacheDir: join(revDataRoot, 'models'),
+			logsDir: join(revDataRoot, 'logs'),
 			logLevel: 'warn',
 		});
 		return this._manager;
