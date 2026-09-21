@@ -67,6 +67,7 @@ import '../platform/actions/common/actions.contribution.js';
 import '../platform/undoRedo/common/undoRedoService.js';
 import '../platform/mcp/common/mcpResourceScannerService.js';
 import '../platform/ryzova/common/revServices.js';
+import './services/ryzova/browser/revAssistantContextService.js';
 import './services/workspaces/common/editSessionIdentityService.js';
 import './services/workspaces/common/canonicalUriService.js';
 import './services/extensions/browser/extensionUrlHandler.js';
