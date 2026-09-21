@@ -17,6 +17,7 @@ import {
 	REV_ASSISTANT_SYSTEM_CHARTER,
 	revAssistantTaskForIntent,
 } from './revAssistant.js';
+import { estimateRevContextTokens, IRevAssistantContextService } from './revAssistantContext.js';
 import { IRevIntelligenceMessage, IRevIntelligenceRequest, IRevIntelligenceResponse } from './revIntelligence.js';
 import { IRevIntelligenceRegistryService, IRevIntelligenceRoute } from './revIntelligenceRegistry.js';
 
@@ -50,6 +51,7 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 
 	constructor(
 		@IRevIntelligenceRegistryService private readonly intelligenceRegistry: IRevIntelligenceRegistryService,
+		@IRevAssistantContextService private readonly assistantContextService?: IRevAssistantContextService,
 	) {
 		super();
 	}
@@ -101,26 +103,41 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 		this.fireConversation(conversation);
 
 		const task = revAssistantTaskForIntent(request.intent);
+		const conversationMessages: IRevIntelligenceMessage[] = conversation.messages.map(message => ({
+			role: message.role,
+			content: message.content,
+		}));
+		const basePromptTokens = estimateRevContextTokens(REV_ASSISTANT_SYSTEM_CHARTER)
+			+ conversationMessages.reduce((total, message) => total + estimateRevContextTokens(message.content), 0);
 		const routes = await this.intelligenceRegistry.resolveAssistantRoutes(task, {
 			requireVision: request.intent === 'visual-analysis',
+			minimumContextWindow: basePromptTokens + 1024,
 		});
 		if (!routes.length) {
 			throw new Error(`No Rev Assistant model is available for task: ${task}.`);
 		}
 
-		const modelMessages: IRevIntelligenceMessage[] = [
-			{ role: 'system', content: REV_ASSISTANT_SYSTEM_CHARTER },
-			...conversation.messages.map(message => ({
-				role: message.role,
-				content: message.content,
-			} satisfies IRevIntelligenceMessage)),
-		];
-
 		const { route, response } = await this.generateWithFallback(routes, {
 			task,
-			messages: modelMessages,
 			allowCodeAuthoring: request.intent === 'code-authoring' && request.allowCodeAuthoring === true,
 			...(request.imageReferences === undefined ? {} : { imageReferences: request.imageReferences }),
+		}, async route => {
+			const context = await this.assistantContextService?.buildContext({
+				prompt: request.content,
+				contextWindow: route.model.contextWindow,
+				reservedOutputTokens: route.model.maxOutputTokens,
+				basePromptTokens,
+				// Until an explicit data-sharing policy exists, automatic project
+				// contents stay on-device even when a future remote assistant route
+				// participates in fallback.
+				includeWorkspaceContents: route.provider.descriptor.kind === 'built-in-local',
+			});
+
+			return [
+				{ role: 'system', content: REV_ASSISTANT_SYSTEM_CHARTER },
+				...(context?.message ? [context.message] : []),
+				...conversationMessages,
+			];
 		}, signal);
 
 		const assistantMessage: IRevAssistantMessage = {
@@ -142,7 +159,8 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 
 	private async generateWithFallback(
 		routes: readonly IRevIntelligenceRoute[],
-		request: Omit<IRevIntelligenceRequest, 'requestId' | 'model'>,
+		request: Omit<IRevIntelligenceRequest, 'requestId' | 'model' | 'messages'>,
+		buildMessages: (route: IRevIntelligenceRoute) => Promise<readonly IRevIntelligenceMessage[]>,
 		signal?: AbortSignal,
 	): Promise<{ readonly route: IRevIntelligenceRoute; readonly response: IRevIntelligenceResponse }> {
 		let lastError: unknown;
@@ -155,6 +173,7 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 				...request,
 				requestId: generateUuid(),
 				model: route.model,
+				messages: await buildMessages(route),
 			};
 			try {
 				const response = await route.provider.generate(modelRequest, signal);
