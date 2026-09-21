@@ -28,20 +28,34 @@ export interface IRevBuiltInModelPreference {
 	readonly fallbackToCompatibleTextModel?: boolean;
 }
 
+export interface IRevBuiltInModelRoutingOptions {
+	readonly minimumContextLength?: number;
+	readonly preferCached?: boolean;
+	readonly preferLoaded?: boolean;
+	readonly limit?: number;
+}
+
+export interface IRevBuiltInModelCandidate {
+	readonly model: IRevBuiltInCatalogModel;
+	readonly score: number;
+	readonly preferenceRank: number | undefined;
+	readonly reasons: readonly string[];
+}
+
 export const REV_BUILT_IN_MODEL_PREFERENCES: readonly IRevBuiltInModelPreference[] = [
 	{
 		task: 'assistant',
-		preferredAliases: ['qwen3.5-2b-text', 'qwen3.5-0.8b', 'qwen2.5-1.5b', 'phi-3.5-mini', 'qwen2.5-0.5b'],
+		preferredAliases: ['qwen3.5-0.8b', 'qwen2.5-1.5b', 'phi-3.5-mini', 'qwen2.5-0.5b'],
 		fallbackToCompatibleTextModel: true,
 	},
 	{
 		task: 'reasoning',
-		preferredAliases: ['qwen3.5-4b', 'phi-4-mini-reasoning', 'deepseek-r1-7b', 'qwen3.5-2b-text', 'phi-3.5-mini', 'qwen2.5-1.5b'],
+		preferredAliases: ['qwen3.5-4b', 'phi-4-mini-reasoning', 'deepseek-r1-7b', 'qwen3.5-0.8b', 'phi-3.5-mini', 'qwen2.5-1.5b'],
 		fallbackToCompatibleTextModel: true,
 	},
 	{
 		task: 'code-helper',
-		preferredAliases: ['qwen2.5-coder-1.5b', 'qwen3.5-4b', 'qwen2.5-coder-7b', 'qwen2.5-coder-0.5b', 'qwen3.5-2b-text', 'qwen2.5-1.5b'],
+		preferredAliases: ['qwen2.5-coder-1.5b', 'qwen3.5-4b', 'qwen2.5-coder-7b', 'qwen2.5-coder-0.5b', 'qwen3.5-0.8b', 'qwen2.5-1.5b'],
 		fallbackToCompatibleTextModel: true,
 	},
 	{
@@ -63,75 +77,6 @@ export function revModelSupportsVision(model: IRevBuiltInCatalogModel): boolean 
 	return model.inputModalities?.some(modality => modality.toLowerCase() === 'image') === true;
 }
 
-/**
- * Select the most appropriate local model for a Rev intelligence task.
- *
- * Explicit aliases are ordered by preference. A cached model wins over an
- * uncached model only when both have the same alias preference. Vision falls
- * back to capability discovery so Rev can adopt newly-added Foundry Local
- * multimodal models without shipping a new hard-coded alias.
- */
-export function selectRevBuiltInModel(
-	task: RevIntelligenceTask,
-	models: readonly IRevBuiltInCatalogModel[],
-): IRevBuiltInCatalogModel | undefined {
-	const preference = revBuiltInModelPreference(task);
-	const eligible = models.filter(model => !preference.requireVision || revModelSupportsVision(model));
-	if (!eligible.length) {
-		return undefined;
-	}
-
-	if (preference.preferredAliases.length) {
-		const ranked = eligible
-			.map(model => ({
-				model,
-				aliasRank: preference.preferredAliases.indexOf(model.alias),
-			}))
-			.filter(candidate => candidate.aliasRank >= 0)
-			.sort((a, b) => {
-				if (a.aliasRank !== b.aliasRank) {
-					return a.aliasRank - b.aliasRank;
-				}
-				const cachedDelta = Number(Boolean(b.model.isCached)) - Number(Boolean(a.model.isCached));
-				if (cachedDelta !== 0) {
-					return cachedDelta;
-				}
-				return a.model.id.localeCompare(b.model.id);
-			});
-
-		if (ranked.length) {
-			return ranked[0].model;
-		}
-		if (!preference.fallbackToCompatibleTextModel && !preference.requireVision) {
-			return undefined;
-		}
-	}
-
-	const fallback = preference.requireVision
-		? eligible
-		: eligible.filter(isCompatibleTextChatModel);
-	if (!fallback.length) {
-		return undefined;
-	}
-
-	return [...fallback].sort((a, b) => {
-		const cachedDelta = Number(Boolean(b.isCached)) - Number(Boolean(a.isCached));
-		if (cachedDelta !== 0) {
-			return cachedDelta;
-		}
-		const loadedDelta = Number(Boolean(b.isLoaded)) - Number(Boolean(a.isLoaded));
-		if (loadedDelta !== 0) {
-			return loadedDelta;
-		}
-		const contextDelta = (b.contextLength ?? 0) - (a.contextLength ?? 0);
-		if (contextDelta !== 0) {
-			return contextDelta;
-		}
-		return a.id.localeCompare(b.id);
-	})[0];
-}
-
-
 export function isCompatibleTextChatModel(model: IRevBuiltInCatalogModel): boolean {
 	const inputOk = !model.inputModalities?.length || model.inputModalities.some(modality => modality.toLowerCase() === 'text');
 	const outputOk = !model.outputModalities?.length || model.outputModalities.some(modality => modality.toLowerCase() === 'text');
@@ -140,4 +85,118 @@ export function isCompatibleTextChatModel(model: IRevBuiltInCatalogModel): boole
 	const task = model.catalogTask?.toLowerCase();
 	const taskOk = !task || !/(audio|speech|transcription|embedding)/.test(task);
 	return inputOk && outputOk && capabilityOk && taskOk;
+}
+
+/**
+ * Foundry model aliases can be exposed as either the short family alias
+ * (`qwen3.5-0.8b`) or a concrete variant
+ * (`qwen3.5-0.8b-generic-cpu`). Treat both as the same preference family.
+ */
+export function revModelAliasMatches(alias: string, preferredAlias: string): boolean {
+	const candidate = alias.trim().toLowerCase();
+	const preferred = preferredAlias.trim().toLowerCase();
+	return candidate === preferred || candidate.startsWith(`${preferred}-`);
+}
+
+function preferenceRank(alias: string, preferredAliases: readonly string[]): number | undefined {
+	for (let index = 0; index < preferredAliases.length; index++) {
+		if (revModelAliasMatches(alias, preferredAliases[index])) {
+			return index;
+		}
+	}
+	return undefined;
+}
+
+function isEligibleForTask(task: RevIntelligenceTask, model: IRevBuiltInCatalogModel): boolean {
+	if (task === 'vision') {
+		return revModelSupportsVision(model);
+	}
+	return isCompatibleTextChatModel(model);
+}
+
+/**
+ * Rank every compatible local model for a Rev intelligence task.
+ *
+ * The explicit family preference remains the strongest signal, while already
+ * loaded/cached models and sufficient context improve ordering within the same
+ * family or among compatible fallbacks. The result is deterministic so routing
+ * does not change because a catalog happens to return models in a different order.
+ */
+export function rankRevBuiltInModels(
+	task: RevIntelligenceTask,
+	models: readonly IRevBuiltInCatalogModel[],
+	options: IRevBuiltInModelRoutingOptions = {},
+): readonly IRevBuiltInModelCandidate[] {
+	const preference = revBuiltInModelPreference(task);
+	const minimumContextLength = Math.max(0, options.minimumContextLength ?? 0);
+	const preferCached = options.preferCached !== false;
+	const preferLoaded = options.preferLoaded !== false;
+
+	const candidates: IRevBuiltInModelCandidate[] = [];
+	for (const model of models) {
+		if (!isEligibleForTask(task, model)) {
+			continue;
+		}
+		if (minimumContextLength > 0 && model.contextLength !== undefined && model.contextLength < minimumContextLength) {
+			continue;
+		}
+
+		const rank = preferenceRank(model.alias, preference.preferredAliases);
+		if (rank === undefined && !preference.fallbackToCompatibleTextModel && !preference.requireVision) {
+			continue;
+		}
+
+		let score = rank === undefined ? 10_000 : 100_000 - (rank * 5_000);
+		const reasons: string[] = [];
+		if (rank !== undefined) {
+			reasons.push(`preferred-family:${preference.preferredAliases[rank]}`);
+		} else {
+			reasons.push('compatible-fallback');
+		}
+
+		if (preferLoaded && model.isLoaded) {
+			score += 800;
+			reasons.push('already-loaded');
+		}
+		if (preferCached && model.isCached) {
+			score += 400;
+			reasons.push('already-cached');
+		}
+		if (minimumContextLength > 0) {
+			if (model.contextLength === undefined) {
+				score -= 100;
+				reasons.push('context-unknown');
+			} else {
+				score += Math.min(300, Math.floor((model.contextLength - minimumContextLength) / 1024));
+				reasons.push('context-sufficient');
+			}
+		}
+		if (task === 'code-helper' && model.supportsToolCalling) {
+			score += 50;
+			reasons.push('tool-capable');
+		}
+
+		candidates.push({ model, score, preferenceRank: rank, reasons });
+	}
+
+	candidates.sort((a, b) => {
+		const scoreDelta = b.score - a.score;
+		if (scoreDelta !== 0) {
+			return scoreDelta;
+		}
+		const aliasDelta = a.model.alias.localeCompare(b.model.alias);
+		return aliasDelta !== 0 ? aliasDelta : a.model.id.localeCompare(b.model.id);
+	});
+
+	const limit = options.limit === undefined ? candidates.length : Math.max(0, options.limit);
+	return candidates.slice(0, limit);
+}
+
+/** Return the highest-ranked compatible local model for a Rev intelligence task. */
+export function selectRevBuiltInModel(
+	task: RevIntelligenceTask,
+	models: readonly IRevBuiltInCatalogModel[],
+	options?: IRevBuiltInModelRoutingOptions,
+): IRevBuiltInCatalogModel | undefined {
+	return rankRevBuiltInModels(task, models, { ...options, limit: 1 })[0]?.model;
 }
