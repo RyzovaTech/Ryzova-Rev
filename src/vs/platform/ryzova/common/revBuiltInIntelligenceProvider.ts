@@ -16,9 +16,10 @@ import {
 	RevIntelligenceTask,
 } from './revIntelligence.js';
 import { IRevBuiltInModelRuntimeService } from './revBuiltInModelRuntime.js';
-import { selectRevBuiltInModel } from './revBuiltInModels.js';
+import { rankRevBuiltInModels } from './revBuiltInModels.js';
 
 const TEXT_TASKS: readonly RevIntelligenceTask[] = ['assistant', 'reasoning', 'code-helper'];
+const MAX_ROUTES_PER_TASK = 3;
 
 /**
  * Provider bridge between the generic Rev intelligence registry and the
@@ -46,21 +47,24 @@ export class RevBuiltInIntelligenceProvider extends Disposable implements IRevIn
 		const descriptors: IRevIntelligenceModelDescriptor[] = [];
 
 		for (const task of TEXT_TASKS) {
-			const selected = selectRevBuiltInModel(task, catalog);
-			if (!selected) {
-				continue;
+			const ranked = rankRevBuiltInModels(task, catalog, { limit: MAX_ROUTES_PER_TASK });
+			for (let index = 0; index < ranked.length; index++) {
+				const selected = ranked[index].model;
+				descriptors.push({
+					id: `rev-local:${task}:${selected.id}`,
+					providerId: this.descriptor.id,
+					displayName: selected.displayName ?? selected.alias,
+					task,
+					priority: 1_000 - index,
+					routingRank: index,
+					contextWindow: selected.contextLength,
+					maxOutputTokens: selected.maxOutputTokens,
+					supportsVision: false,
+					isCached: selected.isCached,
+					isLoaded: selected.isLoaded,
+					runtimeModelAlias: selected.alias,
+				});
 			}
-			descriptors.push({
-				id: `rev-local:${task}:${selected.id}`,
-				providerId: this.descriptor.id,
-				displayName: selected.displayName ?? selected.alias,
-				task,
-				priority: 100,
-				contextWindow: selected.contextLength,
-				maxOutputTokens: selected.maxOutputTokens,
-				supportsVision: false,
-				runtimeModelAlias: selected.alias,
-			});
 		}
 
 		return descriptors;
