@@ -13,6 +13,13 @@ export interface IRevIntelligenceRoute {
 	readonly model: IRevIntelligenceModelDescriptor;
 }
 
+export interface IRevIntelligenceRouteOptions {
+	readonly minimumContextWindow?: number;
+	readonly requireVision?: boolean;
+	readonly excludedProviderIds?: readonly string[];
+	readonly excludedModelIds?: readonly string[];
+}
+
 export const IRevIntelligenceRegistryService = createDecorator<IRevIntelligenceRegistryService>('revIntelligenceRegistryService');
 
 export interface IRevIntelligenceRegistryService {
@@ -21,7 +28,8 @@ export interface IRevIntelligenceRegistryService {
 	registerProvider(provider: IRevIntelligenceProvider): IDisposable;
 	getProvider(id: string): IRevIntelligenceProvider | undefined;
 	listProviders(): readonly IRevIntelligenceProvider[];
-	resolveAssistantRoute(task: RevIntelligenceTask): Promise<IRevIntelligenceRoute>;
+	resolveAssistantRoutes(task: RevIntelligenceTask, options?: IRevIntelligenceRouteOptions): Promise<readonly IRevIntelligenceRoute[]>;
+	resolveAssistantRoute(task: RevIntelligenceTask, options?: IRevIntelligenceRouteOptions): Promise<IRevIntelligenceRoute>;
 }
 
 export class RevIntelligenceRegistryService implements IRevIntelligenceRegistryService {
@@ -54,9 +62,15 @@ export class RevIntelligenceRegistryService implements IRevIntelligenceRegistryS
 		return [...this.providers.values()].sort((a, b) => a.descriptor.id.localeCompare(b.descriptor.id));
 	}
 
-	async resolveAssistantRoute(task: RevIntelligenceTask): Promise<IRevIntelligenceRoute> {
-		const assistantProviders = this.listProviders().filter(provider => provider.descriptor.scope === 'rev-assistant');
-		const candidates: { provider: IRevIntelligenceProvider; model: IRevIntelligenceModelDescriptor }[] = [];
+	async resolveAssistantRoutes(task: RevIntelligenceTask, options: IRevIntelligenceRouteOptions = {}): Promise<readonly IRevIntelligenceRoute[]> {
+		const excludedProviderIds = new Set(options.excludedProviderIds ?? []);
+		const excludedModelIds = new Set(options.excludedModelIds ?? []);
+		const requireVision = options.requireVision ?? task === 'vision';
+		const minimumContextWindow = Math.max(0, options.minimumContextWindow ?? 0);
+		const assistantProviders = this.listProviders().filter(provider =>
+			provider.descriptor.scope === 'rev-assistant' && !excludedProviderIds.has(provider.descriptor.id)
+		);
+		const candidates: IRevIntelligenceRoute[] = [];
 
 		for (const provider of assistantProviders) {
 			try {
@@ -66,16 +80,22 @@ export class RevIntelligenceRegistryService implements IRevIntelligenceRegistryS
 				}
 
 				for (const model of await provider.models()) {
-					if (
-						model.providerId === provider.descriptor.id
-						&& model.task === task
-						&& (task !== 'vision' || model.supportsVision === true)
-					) {
-						candidates.push({ provider, model });
+					if (model.providerId !== provider.descriptor.id || model.task !== task) {
+						continue;
 					}
+					if (excludedModelIds.has(model.id)) {
+						continue;
+					}
+					if (requireVision && model.supportsVision !== true) {
+						continue;
+					}
+					if (minimumContextWindow > 0 && model.contextWindow !== undefined && model.contextWindow < minimumContextWindow) {
+						continue;
+					}
+					candidates.push({ provider, model });
 				}
 			} catch {
-				// A broken provider must not prevent another built-in Rev Assistant provider from serving the task.
+				// A broken provider must not prevent another Rev Assistant provider from serving the task.
 				continue;
 			}
 		}
@@ -85,11 +105,31 @@ export class RevIntelligenceRegistryService implements IRevIntelligenceRegistryS
 			if (priorityDelta !== 0) {
 				return priorityDelta;
 			}
+			const loadedDelta = Number(Boolean(b.model.isLoaded)) - Number(Boolean(a.model.isLoaded));
+			if (loadedDelta !== 0) {
+				return loadedDelta;
+			}
+			const cachedDelta = Number(Boolean(b.model.isCached)) - Number(Boolean(a.model.isCached));
+			if (cachedDelta !== 0) {
+				return cachedDelta;
+			}
+			const contextKnowledgeDelta = Number(b.model.contextWindow !== undefined) - Number(a.model.contextWindow !== undefined);
+			if (minimumContextWindow > 0 && contextKnowledgeDelta !== 0) {
+				return contextKnowledgeDelta;
+			}
 			const providerDelta = a.provider.descriptor.id.localeCompare(b.provider.descriptor.id);
-			return providerDelta !== 0 ? providerDelta : a.model.id.localeCompare(b.model.id);
+			if (providerDelta !== 0) {
+				return providerDelta;
+			}
+			const routingRankDelta = (a.model.routingRank ?? Number.MAX_SAFE_INTEGER) - (b.model.routingRank ?? Number.MAX_SAFE_INTEGER);
+			return routingRankDelta !== 0 ? routingRankDelta : a.model.id.localeCompare(b.model.id);
 		});
 
-		const route = candidates[0];
+		return candidates;
+	}
+
+	async resolveAssistantRoute(task: RevIntelligenceTask, options?: IRevIntelligenceRouteOptions): Promise<IRevIntelligenceRoute> {
+		const route = (await this.resolveAssistantRoutes(task, options))[0];
 		if (!route) {
 			throw new Error(`No built-in Rev Assistant model is available for task: ${task}.`);
 		}
