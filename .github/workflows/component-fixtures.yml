@@ -381,7 +381,9 @@ jobs:
           CURRENT_SHA: ${{ github.sha }}
 
       - name: Fail if blocks-ci hashes changed
-        if: steps.blocks-ci.outputs.match == 'false'
+        # The blocking screenshot baseline is hosted by Microsoft infrastructure and rejects RyzovaTech uploads.
+        # Keep the comparison/reporting, but only make that upstream-owned baseline a hard gate in the upstream repo.
+        if: steps.blocks-ci.outputs.match == 'false' && github.repository_owner == 'microsoft'
         run: |
           echo "::error::blocks-ci screenshot hashes do not match committed file. See PR comment or job summary for the updated content."
           echo ""
