@@ -16,6 +16,9 @@ permissions: {}
 
 jobs:
   analyze:
+    # Code scanning upload is unavailable when this repository is private without GitHub Advanced Security.
+    # Keep the workflow ready to run automatically whenever the repository is public.
+    if: ${{ github.event.repository.private == false }}
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
     permissions:
