@@ -13,6 +13,8 @@ export interface IRevBuiltInCatalogModel {
 	readonly inputModalities?: readonly string[];
 	readonly outputModalities?: readonly string[];
 	readonly supportsToolCalling?: boolean;
+	readonly capabilities?: readonly string[];
+	readonly catalogTask?: string;
 	readonly isCached?: boolean;
 	readonly isLoaded?: boolean;
 }
@@ -21,20 +23,24 @@ export interface IRevBuiltInModelPreference {
 	readonly task: RevIntelligenceTask;
 	readonly preferredAliases: readonly string[];
 	readonly requireVision?: boolean;
+	readonly fallbackToCompatibleTextModel?: boolean;
 }
 
 export const REV_BUILT_IN_MODEL_PREFERENCES: readonly IRevBuiltInModelPreference[] = [
 	{
 		task: 'assistant',
 		preferredAliases: ['qwen2.5-1.5b', 'phi-3.5-mini', 'qwen2.5-0.5b'],
+		fallbackToCompatibleTextModel: true,
 	},
 	{
 		task: 'reasoning',
-		preferredAliases: ['phi-4-mini-reasoning', 'deepseek-r1-7b'],
+		preferredAliases: ['phi-4-mini-reasoning', 'deepseek-r1-7b', 'phi-3.5-mini', 'qwen2.5-1.5b'],
+		fallbackToCompatibleTextModel: true,
 	},
 	{
 		task: 'code-helper',
-		preferredAliases: ['qwen2.5-coder-1.5b', 'qwen2.5-coder-7b', 'qwen2.5-coder-0.5b'],
+		preferredAliases: ['qwen2.5-coder-1.5b', 'qwen2.5-coder-7b', 'qwen2.5-coder-0.5b', 'qwen2.5-1.5b'],
+		fallbackToCompatibleTextModel: true,
 	},
 	{
 		task: 'vision',
@@ -94,10 +100,17 @@ export function selectRevBuiltInModel(
 		if (ranked.length) {
 			return ranked[0].model;
 		}
+		if (!preference.fallbackToCompatibleTextModel) {
+			return undefined;
+		}
+	}
+
+	const fallback = eligible.filter(isCompatibleTextChatModel);
+	if (!fallback.length) {
 		return undefined;
 	}
 
-	return [...eligible].sort((a, b) => {
+	return [...fallback].sort((a, b) => {
 		const cachedDelta = Number(Boolean(b.isCached)) - Number(Boolean(a.isCached));
 		if (cachedDelta !== 0) {
 			return cachedDelta;
@@ -112,4 +125,15 @@ export function selectRevBuiltInModel(
 		}
 		return a.id.localeCompare(b.id);
 	})[0];
+}
+
+
+export function isCompatibleTextChatModel(model: IRevBuiltInCatalogModel): boolean {
+	const inputOk = !model.inputModalities?.length || model.inputModalities.some(modality => modality.toLowerCase() === 'text');
+	const outputOk = !model.outputModalities?.length || model.outputModalities.some(modality => modality.toLowerCase() === 'text');
+	const capabilities = model.capabilities?.map(capability => capability.toLowerCase());
+	const capabilityOk = !capabilities?.length || capabilities.some(capability => capability === 'chat' || capability === 'completion');
+	const task = model.catalogTask?.toLowerCase();
+	const taskOk = !task || !/(audio|speech|transcription|embedding)/.test(task);
+	return inputOk && outputOk && capabilityOk && taskOk;
 }
