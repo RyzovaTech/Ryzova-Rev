@@ -15,7 +15,7 @@ import {
 	IRevBuiltInRuntimeRequest,
 	IRevBuiltInRuntimeStatus,
 } from '../common/revBuiltInModelRuntime.js';
-import { IRevBuiltInCatalogModel, revModelSupportsVision } from '../common/revBuiltInModels.js';
+import { IRevBuiltInCatalogModel } from '../common/revBuiltInModels.js';
 import { IRevIntelligenceResponse, RevIntelligenceStreamEvent } from '../common/revIntelligence.js';
 
 const SUPPORTED_TARGETS = new Set([
@@ -62,6 +62,7 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 	private readonly _loadedModels = new Map<string, FoundryModel>();
 	private readonly _activeStreams = new Map<string, IActiveStream>();
 	private readonly _downloadControllers = new Map<string, AbortController>();
+	private _activeRequestId: string | undefined;
 
 	async getStatus(): Promise<IRevBuiltInRuntimeStatus> {
 		return { ...this._status };
@@ -72,9 +73,26 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 		this.setStatus({ state: 'discovering', supported: true, message: 'Discovering local models…' });
 		try {
 			const manager = await this.getManager();
-			const models = await manager.catalog.getModels();
+			const cached = await manager.catalog.getCachedModels();
+			let models = cached;
+			try {
+				const discovered = await manager.catalog.getModels();
+				const byId = new Map<string, FoundryModel>();
+				for (const model of [...cached, ...discovered]) {
+					byId.set(model.id, model);
+				}
+				models = [...byId.values()];
+			} catch (error) {
+				if (!cached.length) {
+					throw error;
+				}
+				// Offline after first use is a supported scenario: cached models are
+				// enough to keep Rev Assistant available without catalog access.
+			}
 			const result = await Promise.all(models.map(model => this.toCatalogModel(model)));
-			this.setStatus({ state: 'idle', supported: true });
+			this.setStatus(this._loadedModels.size
+				? { state: 'ready', supported: true, activeModelAlias: this._loadedModels.keys().next().value }
+				: { state: 'idle', supported: true });
 			return result.sort((a, b) => a.alias.localeCompare(b.alias) || a.id.localeCompare(b.id));
 		} catch (error) {
 			this.fail(error);
@@ -83,6 +101,10 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 	}
 
 	async prepareModel(modelAlias: string): Promise<IRevBuiltInCatalogModel> {
+		return this.prepareModelInternal(modelAlias, `prepare:${modelAlias}`);
+	}
+
+	private async prepareModelInternal(modelAlias: string, cancellationKey: string): Promise<IRevBuiltInCatalogModel> {
 		this.assertSupported();
 		const alias = modelAlias.trim();
 		if (!alias) {
@@ -104,7 +126,7 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 
 			if (!model.isCached) {
 				const controller = new AbortController();
-				this._downloadControllers.set(alias, controller);
+				this._downloadControllers.set(cancellationKey, controller);
 				this.setStatus({ state: 'downloading', supported: true, activeModelAlias: alias, progress: 0, message: `Downloading ${alias}…` });
 				try {
 					await model.download(progress => {
@@ -118,11 +140,12 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 						});
 					}, controller.signal);
 				} finally {
-					this._downloadControllers.delete(alias);
+					this._downloadControllers.delete(cancellationKey);
 				}
 			}
 
 			this.setStatus({ state: 'loading', supported: true, activeModelAlias: alias, message: `Loading ${alias}…` });
+			await this.unloadOtherModels(alias);
 			await model.load();
 			this._loadedModels.set(alias, model);
 			this.setStatus({ state: 'ready', supported: true, activeModelAlias: alias });
@@ -134,30 +157,32 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 	}
 
 	async generate(request: IRevBuiltInRuntimeRequest): Promise<IRevIntelligenceResponse> {
-		this.validateRequest(request);
-		const model = await this.ensureLoadedModel(request.modelAlias);
-		this.setStatus({ state: 'generating', supported: true, activeModelAlias: request.modelAlias });
-
-		try {
-			const client = model.createChatClient();
-			const response = await client.completeChat(toFoundryMessages(request));
-			const content = extractCompletionContent(response);
-			const result: IRevIntelligenceResponse = {
-				requestId: request.requestId,
-				modelId: model.id,
-				content,
-			};
-			this.setStatus({ state: 'ready', supported: true, activeModelAlias: request.modelAlias });
-			return result;
-		} catch (error) {
-			this.fail(error, request.modelAlias);
-			throw error;
-		}
+		// One implementation path keeps cancellation and lifecycle behavior
+		// identical for streaming and non-streaming assistant callers.
+		return this.stream(request);
 	}
 
 	async stream(request: IRevBuiltInRuntimeRequest): Promise<IRevIntelligenceResponse> {
 		this.validateRequest(request);
-		const model = await this.ensureLoadedModel(request.modelAlias);
+		if (this._activeRequestId && this._activeRequestId !== request.requestId) {
+			throw new Error('Rev built-in intelligence is busy with another request.');
+		}
+		this._activeRequestId = request.requestId;
+
+		let model: FoundryModel | undefined;
+		try {
+			model = await this.ensureLoadedModel(request.modelAlias, request.requestId);
+		} catch (error) {
+			this._activeRequestId = undefined;
+			if (isCancellationError(error)) {
+				this._onDidStreamEvent.fire({ type: 'cancelled', requestId: request.requestId });
+				this.setStatus({ state: 'ready', supported: true, activeModelAlias: request.modelAlias });
+			} else {
+				this.fail(error, request.modelAlias);
+			}
+			throw error;
+		}
+
 		const client = model.createChatClient();
 		const iterable = client.completeStreamingChat(toFoundryMessages(request));
 		const iterator = iterable[Symbol.asyncIterator]();
@@ -206,26 +231,30 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 			throw error;
 		} finally {
 			this._activeStreams.delete(request.requestId);
-			if (active.cancelled) {
-				await iterator.return?.().catch(() => { /* best effort */ });
+			this._activeRequestId = undefined;
+			if (active.cancelled && iterator.return) {
+				await iterator.return().catch(() => { /* best effort */ });
 			}
 		}
 	}
 
 	async cancel(requestId: string): Promise<void> {
+		const controller = this._downloadControllers.get(requestId);
+		controller?.abort();
+
 		const active = this._activeStreams.get(requestId);
 		if (active) {
 			active.cancelled = true;
-			await active.iterator.return?.().catch(() => { /* best effort */ });
-			return;
-		}
-
-		for (const controller of this._downloadControllers.values()) {
-			controller.abort();
+			if (active.iterator.return) {
+				await active.iterator.return().catch(() => { /* best effort */ });
+			}
 		}
 	}
 
 	async unload(modelAlias?: string): Promise<void> {
+		if (this._activeRequestId) {
+			throw new Error('Cannot unload Rev built-in models while inference is active.');
+		}
 		const targets = modelAlias
 			? [[modelAlias, this._loadedModels.get(modelAlias)] as const]
 			: [...this._loadedModels.entries()];
@@ -257,17 +286,27 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 		super.dispose();
 	}
 
-	private async ensureLoadedModel(alias: string): Promise<FoundryModel> {
+	private async ensureLoadedModel(alias: string, cancellationKey: string): Promise<FoundryModel> {
 		const existing = this._loadedModels.get(alias);
 		if (existing && await existing.isLoaded()) {
 			return existing;
 		}
-		await this.prepareModel(alias);
+		await this.prepareModelInternal(alias, cancellationKey);
 		const loaded = this._loadedModels.get(alias);
 		if (!loaded) {
 			throw new Error(`Rev built-in model failed to load: ${alias}`);
 		}
 		return loaded;
+	}
+
+	private async unloadOtherModels(aliasToKeep: string): Promise<void> {
+		for (const [alias, model] of [...this._loadedModels.entries()]) {
+			if (alias === aliasToKeep) {
+				continue;
+			}
+			await model.unload();
+			this._loadedModels.delete(alias);
+		}
 	}
 
 	private async getManager(): Promise<FoundryLocalManager> {
@@ -314,6 +353,8 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 			inputModalities,
 			outputModalities,
 			supportsToolCalling: model.supportsToolCalling ?? undefined,
+			capabilities: splitMetadata(model.capabilities),
+			catalogTask: model.info.task ?? undefined,
 			isCached: model.isCached,
 			isLoaded: await model.isLoaded(),
 		};
@@ -378,12 +419,12 @@ function toFoundryMessages(request: IRevBuiltInRuntimeRequest): { role: string; 
 	}));
 }
 
-function extractCompletionContent(response: any): string {
-	const content = response?.choices?.[0]?.message?.content;
-	if (typeof content !== 'string') {
-		throw new Error('Rev built-in model returned an empty or unsupported chat response.');
-	}
-	return content;
+function isCancellationError(error: unknown): boolean {
+	return error instanceof Error && (
+		(error as Error & { code?: string }).code === 'ERR_REV_CANCELLED'
+		|| error.name === 'AbortError'
+		|| /abort|cancel/i.test(error.message)
+	);
 }
 
 function createCancelledError(requestId: string): Error {
