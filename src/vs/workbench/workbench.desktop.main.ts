@@ -59,6 +59,7 @@ import './services/mcp/electron-browser/mcpWorkbenchManagementService.js';
 import './services/encryption/electron-browser/encryptionService.js';
 import './services/imageResize/electron-browser/imageResizeService.js';
 import './services/localTranscription/electron-browser/localTranscriptionService.js';
+import './services/ryzova/electron-browser/revBuiltInModelRuntimeService.js';
 import './services/secrets/electron-browser/secretStorageService.js';
 import './services/localization/electron-browser/languagePackService.js';
 import './services/telemetry/electron-browser/telemetryService.js';
@@ -111,6 +112,9 @@ registerSingleton(IUserDataInitializationService, new SyncDescriptor(UserDataIni
 
 
 //#region --- workbench contributions
+
+// Ryzova Rev built-in intelligence
+import './contrib/ryzova/electron-browser/revBuiltInIntelligence.contribution.js';
 
 // Logs
 import './contrib/logs/electron-browser/logs.contribution.js';
