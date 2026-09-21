@@ -86,4 +86,8 @@ Ryzova Rev is a separate project and should not be confused with Microsoft's bra
 
 ## License
 
-The Code - OSS-derived source in this repository is provided under the MIT license contained in [LICENSE.txt](LICENSE.txt). Third-party components may include their own notices and licenses; see [ThirdPartyNotices.txt](ThirdPartyNotices.txt).
+Ryzova Rev is distributed under the **GNU General Public License v3.0 only (GPL-3.0-only)**. See [LICENSE](LICENSE).
+
+RyzovaTech-authored Rev code and modifications are licensed under GPL-3.0-only unless a file says otherwise. The Microsoft-authored **Code - OSS** portions retain their original MIT license and copyright notices; the preserved upstream MIT text is in [LICENSE.txt](LICENSE.txt). Those upstream portions remain available under the MIT terms as well.
+
+Third-party components keep their own licenses and notices. See [ThirdPartyNotices.txt](ThirdPartyNotices.txt). Nothing in the Ryzova Rev GPL notice removes or replaces license obligations that apply to upstream or third-party components.
