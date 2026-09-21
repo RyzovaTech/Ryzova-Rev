@@ -29,6 +29,10 @@ const SUPPORTED_TARGETS = new Set([
 type FoundryLocal = typeof import('foundry-local-sdk');
 type FoundryLocalManager = import('foundry-local-sdk').FoundryLocalManager;
 type FoundryModel = import('foundry-local-sdk').IModel;
+type FoundryChatClient = import('foundry-local-sdk').ChatClient;
+
+const MODEL_LOAD_TIMEOUT_MS = 180_000;
+const STREAM_INACTIVITY_TIMEOUT_MS = 90_000;
 
 interface IActiveStream {
 	readonly iterator: AsyncIterator<any>;
@@ -91,8 +95,9 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 				// enough to keep Rev Assistant available without catalog access.
 			}
 			const result = await Promise.all(models.map(model => this.toCatalogModel(model)));
-			this.setStatus(this._loadedModels.size
-				? { state: 'ready', supported: true, activeModelAlias: this._loadedModels.keys().next().value }
+			const activeModelAlias = this.currentActiveModelAlias();
+			this.setStatus(activeModelAlias
+				? { state: 'ready', supported: true, activeModelAlias }
 				: { state: 'idle', supported: true });
 			return result.sort((a, b) => a.alias.localeCompare(b.alias) || a.id.localeCompare(b.id));
 		} catch (error) {
@@ -160,7 +165,10 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 			return this.toCatalogModel(model);
 		} catch (error) {
 			if (isCancellationError(error)) {
-				this.setStatus({ state: 'ready', supported: true, activeModelAlias: this._loadedModels.keys().next().value });
+				const activeModelAlias = this.currentActiveModelAlias();
+				this.setStatus(activeModelAlias
+					? { state: 'ready', supported: true, activeModelAlias }
+					: { state: 'idle', supported: true });
 			} else {
 				this.fail(error, alias);
 			}
@@ -195,18 +203,23 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 			throw error;
 		}
 
-		const client = model.createChatClient();
-		const iterable = client.completeStreamingChat(toFoundryMessages(request));
-		const iterator = iterable[Symbol.asyncIterator]();
-		const active: IActiveStream = { iterator, cancelled: false };
-		this._activeStreams.set(request.requestId, active);
-		this.setStatus({ state: 'generating', supported: true, activeModelAlias: request.modelAlias });
-		this._onDidStreamEvent.fire({ type: 'started', requestId: request.requestId, modelId: model.id });
-
+		let active: IActiveStream | undefined;
 		let content = '';
 		try {
+			const client = model.createChatClient();
+			configureClient(client, request, model);
+			const iterable = client.completeStreamingChat(toFoundryMessages(request));
+			const iterator = iterable[Symbol.asyncIterator]();
+			active = { iterator, cancelled: false };
+			this._activeStreams.set(request.requestId, active);
+			this.setStatus({ state: 'generating', supported: true, activeModelAlias: request.modelAlias });
+			this._onDidStreamEvent.fire({ type: 'started', requestId: request.requestId, modelId: model.id });
 			while (!active.cancelled) {
-				const next = await iterator.next();
+				const next = await withTimeout(
+					active.iterator.next(),
+					STREAM_INACTIVITY_TIMEOUT_MS,
+					'Rev built-in model stream timed out waiting for the next token.',
+				);
 				if (next.done) {
 					break;
 				}
@@ -245,8 +258,8 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 			this._activeStreams.delete(request.requestId);
 			this._activeRequestId = undefined;
 			this._cancelledRequests.delete(request.requestId);
-			if (active.cancelled && iterator.return) {
-				await iterator.return().catch(() => { /* best effort */ });
+			if (active?.cancelled && active.iterator.return) {
+				await active.iterator.return().catch(() => { /* best effort */ });
 			}
 		}
 	}
@@ -322,6 +335,10 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 		if (this.isCancelled(cancellationKey)) {
 			throw createCancelledError(cancellationKey);
 		}
+	}
+
+	private currentActiveModelAlias(): string | undefined {
+		return this._loadedModels.keys().next().value;
 	}
 
 	private async unloadOtherModels(aliasToKeep: string): Promise<void> {
@@ -431,11 +448,61 @@ function isSupportedHost(): boolean {
 }
 
 function splitMetadata(value: string | null): readonly string[] | undefined {
-	if (!value) {
+	if (!value?.trim()) {
 		return undefined;
 	}
-	const values = value.split(',').map(entry => entry.trim()).filter(Boolean);
+
+	const trimmed = value.trim();
+	if (trimmed.startsWith('[')) {
+		try {
+			const parsed = JSON.parse(trimmed);
+			if (Array.isArray(parsed)) {
+				const values = parsed.filter((entry): entry is string => typeof entry === 'string' && Boolean(entry.trim()));
+				return values.length ? values : undefined;
+			}
+		} catch {
+			// Fall back to delimiter parsing for legacy catalog metadata.
+		}
+	}
+
+	const values = trimmed.split(/[;,]/g).map(entry => entry.trim()).filter(Boolean);
 	return values.length ? values : undefined;
+}
+
+function configureClient(client: FoundryChatClient, request: IRevBuiltInRuntimeRequest, model: FoundryModel): void {
+	client.settings.topP = 0.9;
+	const modelLimit = model.info.maxOutputTokens ?? 2048;
+
+	switch (request.task) {
+		case 'assistant':
+			client.settings.temperature = 0.4;
+			client.settings.maxTokens = Math.min(modelLimit, 1024);
+			break;
+		case 'reasoning':
+			client.settings.temperature = 0.2;
+			client.settings.maxTokens = Math.min(modelLimit, 2048);
+			break;
+		case 'code-helper':
+			client.settings.temperature = 0.15;
+			client.settings.maxTokens = Math.min(modelLimit, 2048);
+			break;
+		case 'vision':
+			client.settings.temperature = 0.2;
+			client.settings.maxTokens = Math.min(modelLimit, 1024);
+			break;
+	}
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+	let handle: ReturnType<typeof setTimeout> | undefined;
+	const timeout = new Promise<T>((_, reject) => {
+		handle = setTimeout(() => reject(new Error(message)), timeoutMs);
+	});
+	return Promise.race([promise, timeout]).finally(() => {
+		if (handle) {
+			clearTimeout(handle);
+		}
+	});
 }
 
 function toFoundryMessages(request: IRevBuiltInRuntimeRequest): { role: string; content: string }[] {
