@@ -5,9 +5,12 @@ This directory is the stable boundary between the Code - OSS platform and Ryzova
 ## Status
 
 **Phase 4 — Rev Core Architecture Layer: complete.**  
-**Phase 5 — Rev Assistant + Built-in Intelligence: in progress.**
+**Phase 5 — Rev Assistant + Built-in Intelligence: in progress.**  
+**Phase 5B — Built-in Local Model Runtime: complete.**
 
 Phase 5 extends the Phase 4 boundary with a dedicated assistant intelligence path that is intentionally separate from external engineering models. Rev Assistant must remain available independently of BYOK/local coding-model configuration, while engineering-model execution stays reserved for Phase 6.
+
+Phase 5B adds the on-device execution path: Rev can discover, download, load, stream from, cancel, and unload Foundry Local chat models in an isolated utility process. The runtime is lazy and downloads model weights only when a selected local model is first needed.
 
 ## Principles
 
@@ -39,6 +42,22 @@ Phase 5 extends the Phase 4 boundary with a dedicated assistant intelligence pat
 - Assistant routing excludes providers scoped as `engineering`.
 - Code authoring is disabled unless the user explicitly opts in for that request.
 - Rev Assistant does not execute workspace tools directly; Phase 6 engineering agents will use the Rev tool layer.
+
+### Phase 5B built-in runtime
+
+- `revBuiltInModels.ts` — deterministic assistant/reasoning/code-helper model selection with compatible-model fallback.
+- `revBuiltInModelRuntime.ts` — runtime lifecycle, status, streaming, cancellation, and unload contracts.
+- `revBuiltInIntelligenceProvider.ts` — bridge from Rev intelligence routing to the local runtime.
+- `node/revBuiltInModelRuntimeService.ts` — Foundry Local discovery, on-demand download/load, inference, timeout, cancellation, and memory lifecycle.
+- `node/revBuiltInModelRuntimeMain.ts` — isolated utility-process entry point.
+- `workbench/services/ryzova/electron-browser/revBuiltInModelRuntimeService.ts` — renderer IPC proxy.
+- `workbench/contrib/ryzova/electron-browser/revBuiltInIntelligence.contribution.ts` — desktop provider bootstrap.
+- Supported native targets mirror Foundry Local: Windows x64/arm64, Linux x64/arm64, and macOS arm64.
+- Only one local chat model is kept loaded at a time to bound memory use; downloaded models remain cached on disk.
+- Runtime progress is observable through `idle → discovering → downloading → loading → ready → generating` states.
+- Streaming requests are cancellable and guarded by model-load and stream-inactivity timeouts.
+- Built-in code-helper inference still requires explicit code-authoring opt-in.
+- Image-reference input is intentionally not advertised by the provider yet because the current Foundry Local JavaScript chat API accepts text messages only; the existing vision role remains reserved for a later Phase 5 integration rather than silently dropping image input.
 
 ## Architecture guarantees
 
