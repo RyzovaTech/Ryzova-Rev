@@ -375,6 +375,7 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 			alias: model.alias,
 			displayName: model.info.displayName ?? model.alias,
 			contextLength: model.contextLength ?? undefined,
+			maxOutputTokens: model.info.maxOutputTokens ?? undefined,
 			inputModalities,
 			outputModalities,
 			supportsToolCalling: model.supportsToolCalling ?? undefined,
