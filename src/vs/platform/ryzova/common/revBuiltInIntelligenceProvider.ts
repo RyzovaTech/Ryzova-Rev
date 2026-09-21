@@ -56,6 +56,7 @@ export class RevBuiltInIntelligenceProvider extends Disposable implements IRevIn
 				task,
 				priority: 100,
 				contextWindow: selected.contextLength,
+				maxOutputTokens: selected.maxOutputTokens,
 				supportsVision: false,
 				runtimeModelAlias: selected.alias,
 			});
