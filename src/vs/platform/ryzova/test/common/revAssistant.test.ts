@@ -153,7 +153,7 @@ suite('Ryzova Rev Assistant', function () {
 			{ id: 'vision', providerId: 'builtin', displayName: 'Vision', task: 'vision', supportsVision: true },
 			{ id: 'code', providerId: 'builtin', displayName: 'Code Helper', task: 'code-helper' },
 		]));
-		const service = new RevAssistantService(registry);
+		const service = new RevAssistantService(registry, new TestAssistantContextService());
 		const conversation = service.createConversation('conversation-1');
 
 		const reply = await service.ask({
@@ -179,7 +179,7 @@ suite('Ryzova Rev Assistant', function () {
 			{ id: 'fallback', providerId: 'builtin', displayName: 'Fallback', task: 'assistant', priority: 90 },
 		], 'reply', new Set(['primary']));
 		const registration = registry.registerProvider(provider);
-		const service = new RevAssistantService(registry);
+		const service = new RevAssistantService(registry, new TestAssistantContextService());
 		service.createConversation('conversation-fallback');
 
 		const reply = await service.ask({
@@ -242,7 +242,7 @@ suite('Ryzova Rev Assistant', function () {
 			displayName: 'Code Helper',
 			task: 'code-helper',
 		}]));
-		const service = new RevAssistantService(registry);
+		const service = new RevAssistantService(registry, new TestAssistantContextService());
 		service.createConversation('conversation-1');
 
 		await assert.rejects(() => service.ask({
@@ -272,7 +272,7 @@ suite('Ryzova Rev Assistant', function () {
 			task: 'vision',
 			supportsVision: true,
 		}]));
-		const service = new RevAssistantService(registry);
+		const service = new RevAssistantService(registry, new TestAssistantContextService());
 		service.createConversation('conversation-1');
 
 		const reply = await service.ask({
