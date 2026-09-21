@@ -90,6 +90,7 @@ export class RevBuiltInIntelligenceProvider extends Disposable implements IRevIn
 
 	async generate(request: IRevIntelligenceRequest, signal?: AbortSignal): Promise<IRevIntelligenceResponse> {
 		const runtimeRequest = this.toRuntimeRequest(request);
+		this.throwIfAlreadyAborted(request.requestId, signal);
 		const abort = () => { void this.runtime.cancel(request.requestId); };
 		signal?.addEventListener('abort', abort, { once: true });
 		try {
@@ -107,6 +108,7 @@ export class RevBuiltInIntelligenceProvider extends Disposable implements IRevIn
 		signal?: AbortSignal,
 	): Promise<IRevIntelligenceResponse> {
 		const runtimeRequest = this.toRuntimeRequest(request);
+		this.throwIfAlreadyAborted(request.requestId, signal);
 		const eventListener = this.runtime.onDidStreamEvent(event => {
 			if (event.requestId === request.requestId) {
 				onEvent(event);
@@ -124,6 +126,16 @@ export class RevBuiltInIntelligenceProvider extends Disposable implements IRevIn
 
 	cancel(requestId: string): Promise<void> {
 		return this.runtime.cancel(requestId);
+	}
+
+	private throwIfAlreadyAborted(requestId: string, signal?: AbortSignal): void {
+		if (!signal?.aborted) {
+			return;
+		}
+		void this.runtime.cancel(requestId);
+		const error = new Error(`Rev built-in request was cancelled before it started: ${requestId}`);
+		(error as Error & { code?: string }).code = 'ERR_REV_CANCELLED';
+		throw error;
 	}
 
 	private toRuntimeRequest(request: IRevIntelligenceRequest) {
