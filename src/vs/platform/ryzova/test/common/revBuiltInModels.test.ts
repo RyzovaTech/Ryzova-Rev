@@ -40,6 +40,15 @@ suite('Ryzova Rev Built-in Model Selection', function () {
 		assert.strictEqual(revModelSupportsVision(selected!), true);
 	});
 
+	test('falls back to another compatible text chat model', function () {
+		const selected = selectRevBuiltInModel('assistant', [
+			{ id: 'fallback', alias: 'future-small-chat', inputModalities: ['text'], outputModalities: ['text'], capabilities: ['chat'], isCached: true },
+			{ id: 'audio', alias: 'whisper', inputModalities: ['audio'], outputModalities: ['text'], capabilities: ['transcription'], isCached: true },
+		]);
+
+		assert.strictEqual(selected?.id, 'fallback');
+	});
+
 	test('returns undefined when task has no compatible local model', function () {
 		assert.strictEqual(selectRevBuiltInModel('vision', [
 			{ id: 'text', alias: 'qwen2.5-1.5b', inputModalities: ['text'] },
