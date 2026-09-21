@@ -21,6 +21,24 @@ suite('Ryzova Rev Built-in Model Selection', function () {
 		assert.strictEqual(selected?.id, 'preferred');
 	});
 
+	test('assistant prefers current Qwen 3.5 text model when available', function () {
+		const selected = selectRevBuiltInModel('assistant', [
+			{ id: 'old', alias: 'qwen2.5-1.5b', isCached: true },
+			{ id: 'new', alias: 'qwen3.5-2b-text', isCached: false },
+		]);
+
+		assert.strictEqual(selected?.id, 'new');
+	});
+
+	test('reasoning prefers Qwen 3.5 4B when available', function () {
+		const selected = selectRevBuiltInModel('reasoning', [
+			{ id: 'phi', alias: 'phi-4-mini-reasoning', isCached: true },
+			{ id: 'qwen', alias: 'qwen3.5-4b', isCached: false, inputModalities: ['text', 'image'], outputModalities: ['text'] },
+		]);
+
+		assert.strictEqual(selected?.id, 'qwen');
+	});
+
 	test('code helper stays on coding-model candidates', function () {
 		const selected = selectRevBuiltInModel('code-helper', [
 			{ id: 'general', alias: 'phi-3.5-mini', isCached: true },
