@@ -26,6 +26,12 @@ export interface IRevIntelligenceModelDescriptor {
 	readonly contextWindow?: number;
 	readonly maxOutputTokens?: number;
 	readonly supportsVision?: boolean;
+	/** Stable routing rank within a provider. Lower values are preferred. */
+	readonly routingRank?: number;
+	/** Whether the provider reports this model as already cached locally. */
+	readonly isCached?: boolean;
+	/** Whether the provider reports this model as already loaded in memory. */
+	readonly isLoaded?: boolean;
 	/** Runtime-specific local alias. Kept out of user-facing IDs so providers can swap variants safely. */
 	readonly runtimeModelAlias?: string;
 }
