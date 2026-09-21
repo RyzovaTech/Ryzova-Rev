@@ -73,9 +73,7 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 		this.assertSupported();
 		this.setStatus({ state: 'discovering', supported: true, message: 'Discovering local models…' });
 		try {
-			this.throwIfCancelled(cancellationKey);
 			const manager = await this.getManager();
-			this.throwIfCancelled(cancellationKey);
 			const cached = await manager.catalog.getCachedModels();
 			let models = cached;
 			try {
@@ -115,7 +113,9 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 		}
 
 		try {
+			this.throwIfCancelled(cancellationKey);
 			const manager = await this.getManager();
+			this.throwIfCancelled(cancellationKey);
 			const existing = this._loadedModels.get(alias);
 			if (existing && await existing.isLoaded()) {
 				this.setStatus({ state: 'ready', supported: true, activeModelAlias: alias });
@@ -159,7 +159,11 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 			this.setStatus({ state: 'ready', supported: true, activeModelAlias: alias });
 			return this.toCatalogModel(model);
 		} catch (error) {
-			this.fail(error, alias);
+			if (isCancellationError(error)) {
+				this.setStatus({ state: 'ready', supported: true, activeModelAlias: this._loadedModels.keys().next().value });
+			} else {
+				this.fail(error, alias);
+			}
 			throw error;
 		}
 	}
