@@ -1,0 +1,115 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) RyzovaTech. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+import { RevIntelligenceTask } from './revIntelligence.js';
+
+export interface IRevBuiltInCatalogModel {
+	readonly id: string;
+	readonly alias: string;
+	readonly displayName?: string;
+	readonly contextLength?: number;
+	readonly inputModalities?: readonly string[];
+	readonly outputModalities?: readonly string[];
+	readonly supportsToolCalling?: boolean;
+	readonly isCached?: boolean;
+	readonly isLoaded?: boolean;
+}
+
+export interface IRevBuiltInModelPreference {
+	readonly task: RevIntelligenceTask;
+	readonly preferredAliases: readonly string[];
+	readonly requireVision?: boolean;
+}
+
+export const REV_BUILT_IN_MODEL_PREFERENCES: readonly IRevBuiltInModelPreference[] = [
+	{
+		task: 'assistant',
+		preferredAliases: ['qwen2.5-1.5b', 'phi-3.5-mini', 'qwen2.5-0.5b'],
+	},
+	{
+		task: 'reasoning',
+		preferredAliases: ['phi-4-mini-reasoning', 'deepseek-r1-7b'],
+	},
+	{
+		task: 'code-helper',
+		preferredAliases: ['qwen2.5-coder-1.5b', 'qwen2.5-coder-7b', 'qwen2.5-coder-0.5b'],
+	},
+	{
+		task: 'vision',
+		preferredAliases: [],
+		requireVision: true,
+	},
+];
+
+export function revBuiltInModelPreference(task: RevIntelligenceTask): IRevBuiltInModelPreference {
+	const preference = REV_BUILT_IN_MODEL_PREFERENCES.find(candidate => candidate.task === task);
+	if (!preference) {
+		throw new Error(`No Rev built-in model preference is defined for task: ${task}`);
+	}
+	return preference;
+}
+
+export function revModelSupportsVision(model: IRevBuiltInCatalogModel): boolean {
+	return model.inputModalities?.some(modality => modality.toLowerCase() === 'image') === true;
+}
+
+/**
+ * Select the most appropriate local model for a Rev intelligence task.
+ *
+ * Explicit aliases are ordered by preference. A cached model wins over an
+ * uncached model only when both have the same alias preference. Vision falls
+ * back to capability discovery so Rev can adopt newly-added Foundry Local
+ * multimodal models without shipping a new hard-coded alias.
+ */
+export function selectRevBuiltInModel(
+	task: RevIntelligenceTask,
+	models: readonly IRevBuiltInCatalogModel[],
+): IRevBuiltInCatalogModel | undefined {
+	const preference = revBuiltInModelPreference(task);
+	const eligible = models.filter(model => !preference.requireVision || revModelSupportsVision(model));
+	if (!eligible.length) {
+		return undefined;
+	}
+
+	if (preference.preferredAliases.length) {
+		const ranked = eligible
+			.map(model => ({
+				model,
+				aliasRank: preference.preferredAliases.indexOf(model.alias),
+			}))
+			.filter(candidate => candidate.aliasRank >= 0)
+			.sort((a, b) => {
+				if (a.aliasRank !== b.aliasRank) {
+					return a.aliasRank - b.aliasRank;
+				}
+				const cachedDelta = Number(Boolean(b.model.isCached)) - Number(Boolean(a.model.isCached));
+				if (cachedDelta !== 0) {
+					return cachedDelta;
+				}
+				return a.model.id.localeCompare(b.model.id);
+			});
+
+		if (ranked.length) {
+			return ranked[0].model;
+		}
+		return undefined;
+	}
+
+	return [...eligible].sort((a, b) => {
+		const cachedDelta = Number(Boolean(b.isCached)) - Number(Boolean(a.isCached));
+		if (cachedDelta !== 0) {
+			return cachedDelta;
+		}
+		const loadedDelta = Number(Boolean(b.isLoaded)) - Number(Boolean(a.isLoaded));
+		if (loadedDelta !== 0) {
+			return loadedDelta;
+		}
+		const contextDelta = (b.contextLength ?? 0) - (a.contextLength ?? 0);
+		if (contextDelta !== 0) {
+			return contextDelta;
+		}
+		return a.id.localeCompare(b.id);
+	})[0];
+}
