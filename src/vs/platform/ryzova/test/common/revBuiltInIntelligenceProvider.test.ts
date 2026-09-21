@@ -128,6 +128,32 @@ suite('Ryzova Rev Built-in Intelligence Provider', function () {
 		runtime.dispose();
 	});
 
+	test('rejects a request whose abort signal is already cancelled', async function () {
+		const runtime = new TestRuntime();
+		const provider = new RevBuiltInIntelligenceProvider(runtime);
+		const controller = new AbortController();
+		controller.abort();
+
+		await assert.rejects(() => provider.generate({
+			requestId: 'request-cancelled',
+			task: 'assistant',
+			model: {
+				id: 'descriptor',
+				providerId: provider.descriptor.id,
+				displayName: 'Local',
+				task: 'assistant',
+				runtimeModelAlias: 'qwen2.5-1.5b',
+			},
+			messages: [{ role: 'user', content: 'Cancel' }],
+			allowCodeAuthoring: false,
+		}, controller.signal), /cancelled before it started/);
+
+		assert.deepStrictEqual(runtime.cancelled, ['request-cancelled']);
+
+		provider.dispose();
+		runtime.dispose();
+	});
+
 	test('forwards only stream events belonging to the current request', async function () {
 		const runtime = new TestRuntime();
 		const provider = new RevBuiltInIntelligenceProvider(runtime);
