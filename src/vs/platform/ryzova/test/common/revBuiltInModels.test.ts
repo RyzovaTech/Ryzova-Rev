@@ -1,0 +1,48 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) RyzovaTech. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+import assert from 'assert';
+import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
+import { revModelSupportsVision, selectRevBuiltInModel } from '../../common/revBuiltInModels.js';
+
+suite('Ryzova Rev Built-in Model Selection', function () {
+
+	ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('assistant uses the highest preferred available alias', function () {
+		const selected = selectRevBuiltInModel('assistant', [
+			{ id: 'small', alias: 'qwen2.5-0.5b', isCached: true },
+			{ id: 'preferred', alias: 'qwen2.5-1.5b', isCached: false },
+			{ id: 'other', alias: 'unrelated-model', isCached: true },
+		]);
+
+		assert.strictEqual(selected?.id, 'preferred');
+	});
+
+	test('code helper stays on coding-model candidates', function () {
+		const selected = selectRevBuiltInModel('code-helper', [
+			{ id: 'general', alias: 'phi-3.5-mini', isCached: true },
+			{ id: 'coder', alias: 'qwen2.5-coder-1.5b' },
+		]);
+
+		assert.strictEqual(selected?.id, 'coder');
+	});
+
+	test('vision discovers image-capable models dynamically', function () {
+		const selected = selectRevBuiltInModel('vision', [
+			{ id: 'text', alias: 'text-only', inputModalities: ['text'], isCached: true },
+			{ id: 'vision', alias: 'future-vision-model', inputModalities: ['text', 'image'], contextLength: 32768 },
+		]);
+
+		assert.strictEqual(selected?.id, 'vision');
+		assert.strictEqual(revModelSupportsVision(selected!), true);
+	});
+
+	test('returns undefined when task has no compatible local model', function () {
+		assert.strictEqual(selectRevBuiltInModel('vision', [
+			{ id: 'text', alias: 'qwen2.5-1.5b', inputModalities: ['text'] },
+		]), undefined);
+	});
+});
