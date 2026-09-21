@@ -120,7 +120,7 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 			task,
 			messages: modelMessages,
 			allowCodeAuthoring: request.intent === 'code-authoring' && request.allowCodeAuthoring === true,
-			imageReferences: request.imageReferences,
+			...(request.imageReferences === undefined ? {} : { imageReferences: request.imageReferences }),
 		}, signal);
 
 		const assistantMessage: IRevAssistantMessage = {
