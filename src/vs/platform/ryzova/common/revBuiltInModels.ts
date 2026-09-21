@@ -10,6 +10,7 @@ export interface IRevBuiltInCatalogModel {
 	readonly alias: string;
 	readonly displayName?: string;
 	readonly contextLength?: number;
+	readonly maxOutputTokens?: number;
 	readonly inputModalities?: readonly string[];
 	readonly outputModalities?: readonly string[];
 	readonly supportsToolCalling?: boolean;
