@@ -10,7 +10,10 @@ This directory is the stable boundary between the Code - OSS platform and Ryzova
 **Phase 5C — Model Catalog + Routing: complete.**  
 **Phase 5D — Project / Context Awareness: complete.**  
 **Phase 5E — Streaming / Cancellation / Error Handling: complete.**  
-**Phase 5F — Rev Assistant Workbench UI: in progress.**
+**Phase 5F — Rev Assistant Workbench UI: complete.**  
+**Phase 5G — Local Conversation Memory: complete.**  
+**Phase 5H — Compile / Tests / Runtime Verification: in progress.**  
+**Pre-Phase-6 audit — Phases 1–5: in progress.**
 
 Phase 5 extends the Phase 4 boundary with a dedicated assistant intelligence path that is intentionally separate from external engineering models. Rev Assistant must remain available independently of BYOK/local coding-model configuration, while engineering-model execution stays reserved for Phase 6.
 
@@ -72,6 +75,7 @@ Phase 5B adds the on-device execution path: Rev can discover, download, load, st
 - Route constraints can require vision support or a minimum known context window.
 - The built-in provider exposes a bounded fallback set per task rather than a single fragile route.
 - The intelligence registry returns an ordered route list while continuing to exclude engineering-scoped providers from Rev Assistant.
+- Minimum-context routing constraints require a known model context window; unknown capacity is never treated as satisfying an explicit minimum.
 - Rev Assistant retries the next compatible route when inference fails, but never retries cancellation.
 - Routing behavior is deterministic and covered by unit tests, including variant aliases, context constraints, vision filtering, and inference fallback.
 
@@ -99,7 +103,7 @@ Phase 5B adds the on-device execution path: Rev can discover, download, load, st
 
 ### Phase 5F workbench UI
 
-Phase 5F is now underway with a first-party Rev Assistant sidebar surface. The initial workbench shell connects directly to the existing Rev Assistant service and exposes project guidance, explanation, planning, diagnosis, live token streaming, cancellation, and conversation reset without granting Phase 6 engineering-tool execution.
+Phase 5F adds a first-party Rev Assistant sidebar surface. The workbench shell connects directly to the existing Rev Assistant service and exposes project guidance, explanation, planning, diagnosis, live token streaming, cancellation, and conversation reset without granting Phase 6 engineering-tool execution.
 
 - Dedicated Rev Assistant activity-bar/sidebar container.
 - Streaming conversation transcript with a non-persistent partial-response surface.
@@ -107,11 +111,20 @@ Phase 5F is now underway with a first-party Rev Assistant sidebar surface. The i
 - Send, cancel, new-conversation, status, and keyboard-submit interactions.
 - Code-authoring and visual-analysis controls remain intentionally hidden until their explicit safety/runtime requirements are represented in the UI.
 
+### Phase 5G local conversation memory
+
+- Rev Assistant can restore previously persisted conversation snapshots through the platform service without exposing mutable internal state.
+- Desktop workbench memory is stored per-workspace with StorageTarget.MACHINE so project-aware conversation content is not synced to other devices automatically.
+- Persistence is bounded to a small number of recent conversations/messages and a total content budget to avoid unbounded workbench storage growth.
+- The Rev Assistant UI resumes the most recently updated local conversation after restart and New chat cleanly replaces the active conversation.
+- Corrupt or obsolete persisted data is ignored rather than blocking workbench startup.
+
 ## Architecture guarantees
 
 - Rev owns its product-specific state under `src/vs/platform/ryzova/`.
 - Code - OSS remains the execution substrate for editor, filesystem, terminal, Git, task, debug, extension, and workspace capabilities.
 - Engineering execution follows an explicit lifecycle rather than ad-hoc boolean flags.
+- Workspace/project refreshes cannot replace an active engineering execution, and overlapping execution starts are rejected.
 - Context admission is deterministic and budget-aware.
 - Project awareness is sourced from existing Code - OSS services and automatic file content remains local-only by default.
 - Mutating or externally visible capabilities require an explicit permission decision.

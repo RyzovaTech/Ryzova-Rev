@@ -191,8 +191,8 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 
 	async stream(request: IRevBuiltInRuntimeRequest): Promise<IRevIntelligenceResponse> {
 		this.validateRequest(request);
-		if (this._activeRequestId && this._activeRequestId !== request.requestId) {
-			throw new Error('Rev built-in intelligence is busy with another request.');
+		if (this._activeRequestId) {
+			throw new Error(`Rev built-in intelligence is busy with request: ${this._activeRequestId}.`);
 		}
 		this._activeRequestId = request.requestId;
 
@@ -203,7 +203,10 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 			this._activeRequestId = undefined;
 			if (isCancellationError(error)) {
 				this._onDidStreamEvent.fire({ type: 'cancelled', requestId: request.requestId });
-				this.setStatus({ state: 'ready', supported: true, activeModelAlias: request.modelAlias });
+				const activeModelAlias = this.currentActiveModelAlias();
+				this.setStatus(activeModelAlias
+					? { state: 'ready', supported: true, activeModelAlias }
+					: { state: 'idle', supported: true });
 			} else {
 				this.fail(error, request.modelAlias);
 			}
@@ -272,11 +275,15 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 	}
 
 	async cancel(requestId: string): Promise<void> {
-		this._cancelledRequests.add(requestId);
 		const controller = this._downloadControllers.get(requestId);
+		const active = this._activeStreams.get(requestId);
+		if (this._activeRequestId !== requestId && !controller && !active) {
+			return;
+		}
+
+		this._cancelledRequests.add(requestId);
 		controller?.abort();
 
-		const active = this._activeStreams.get(requestId);
 		if (active) {
 			active.cancelled = true;
 			if (active.iterator.return) {

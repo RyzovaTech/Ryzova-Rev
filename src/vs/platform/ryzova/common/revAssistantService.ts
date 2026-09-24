@@ -39,10 +39,13 @@ export interface IRevAssistantService {
 	readonly _serviceBrand: undefined;
 
 	readonly onDidChangeConversation: Event<IRevAssistantConversation>;
+	readonly onDidDeleteConversation: Event<string>;
 	readonly onDidStreamEvent: Event<RevAssistantStreamEvent>;
 
 	createConversation(id?: string): IRevAssistantConversation;
+	restoreConversation(conversation: IRevAssistantConversation): IRevAssistantConversation;
 	getConversation(id: string): IRevAssistantConversation | undefined;
+	listConversations(): readonly IRevAssistantConversation[];
 	deleteConversation(id: string): boolean;
 	ask(request: IRevAssistantRequest, signal?: AbortSignal): Promise<IRevAssistantReply>;
 	stream(
@@ -80,6 +83,9 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 	private readonly _onDidChangeConversation = this._register(new Emitter<IRevAssistantConversation>());
 	readonly onDidChangeConversation = this._onDidChangeConversation.event;
 
+	private readonly _onDidDeleteConversation = this._register(new Emitter<string>());
+	readonly onDidDeleteConversation = this._onDidDeleteConversation.event;
+
 	private readonly _onDidStreamEvent = this._register(new Emitter<RevAssistantStreamEvent>());
 	readonly onDidStreamEvent = this._onDidStreamEvent.event;
 
@@ -110,7 +116,23 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 			messages: [],
 		};
 		this.conversations.set(id, conversation);
-		return this.snapshot(conversation);
+		return this.fireConversation(conversation);
+	}
+
+	restoreConversation(conversation: IRevAssistantConversation): IRevAssistantConversation {
+		assertRestorableConversation(conversation);
+		if (this.conversations.has(conversation.id)) {
+			throw new Error(`Rev Assistant conversation already exists: ${conversation.id}`);
+		}
+
+		const restored: IMutableRevAssistantConversation = {
+			id: conversation.id,
+			createdAt: conversation.createdAt,
+			updatedAt: conversation.updatedAt,
+			messages: conversation.messages.map(message => ({ ...message })),
+		};
+		this.conversations.set(restored.id, restored);
+		return this.fireConversation(restored);
 	}
 
 	getConversation(id: string): IRevAssistantConversation | undefined {
@@ -118,11 +140,21 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 		return conversation ? this.snapshot(conversation) : undefined;
 	}
 
+	listConversations(): readonly IRevAssistantConversation[] {
+		return [...this.conversations.values()]
+			.sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id))
+			.map(conversation => this.snapshot(conversation));
+	}
+
 	deleteConversation(id: string): boolean {
 		if (this.activeConversationRequests.has(id)) {
 			return false;
 		}
-		return this.conversations.delete(id);
+		const deleted = this.conversations.delete(id);
+		if (deleted) {
+			this._onDidDeleteConversation.fire(id);
+		}
+		return deleted;
 	}
 
 	ask(request: IRevAssistantRequest, signal?: AbortSignal): Promise<IRevAssistantReply> {
@@ -353,6 +385,7 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 			});
 
 			let emittedToken = false;
+			let streamedContent = '';
 			try {
 				const messages = await buildMessages(route);
 				if (signal.aborted) {
@@ -373,6 +406,7 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 						event => {
 							if (event.type === 'token' && event.token) {
 								emittedToken = true;
+								streamedContent += event.token;
 								emit({
 									type: 'token',
 									requestId: assistantRequestId,
@@ -402,6 +436,9 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 					}
 				}
 
+				if (!response.content && streamedContent) {
+					response = { ...response, content: streamedContent };
+				}
 				return { route, response };
 			} catch (error) {
 				if (signal.aborted || isRevAssistantCancellationError(error)) {
@@ -418,6 +455,9 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 					);
 				}
 
+				if (!normalized.retryable) {
+					throw normalized;
+				}
 				lastError = normalized;
 			} finally {
 				if (active.provider === route.provider && active.providerRequestId === providerRequestId) {
@@ -449,5 +489,23 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 			updatedAt: conversation.updatedAt,
 			messages: conversation.messages.map(message => ({ ...message })),
 		};
+	}
+}
+
+
+function assertRestorableConversation(conversation: IRevAssistantConversation): void {
+	if (!conversation.id.trim()) {
+		throw new Error('Restored Rev Assistant conversation ID must not be empty.');
+	}
+	if (!Number.isFinite(conversation.createdAt) || !Number.isFinite(conversation.updatedAt) || conversation.createdAt < 0 || conversation.updatedAt < conversation.createdAt) {
+		throw new Error('Restored Rev Assistant conversation timestamps are invalid.');
+	}
+	for (const message of conversation.messages) {
+		if (!message.id.trim() || (message.role !== 'user' && message.role !== 'assistant') || !Number.isFinite(message.createdAt) || message.createdAt < 0) {
+			throw new Error('Restored Rev Assistant conversation contains an invalid message.');
+		}
+		if (typeof message.content !== 'string') {
+			throw new Error('Restored Rev Assistant conversation contains invalid message content.');
+		}
 	}
 }

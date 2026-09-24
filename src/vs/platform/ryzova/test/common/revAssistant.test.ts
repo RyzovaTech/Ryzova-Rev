@@ -20,7 +20,7 @@ import {
 } from '../../common/revIntelligence.js';
 import { RevIntelligenceRegistryService } from '../../common/revIntelligenceRegistry.js';
 
-type TestStreamBehavior = 'fail-before-token' | 'fail-after-token' | 'wait-for-cancel';
+type TestStreamBehavior = 'fail-before-token' | 'fail-after-token' | 'wait-for-cancel' | 'tokens-empty-final';
 
 class TestIntelligenceProvider implements IRevIntelligenceProvider {
 	readonly descriptor: IRevIntelligenceProviderDescriptor;
@@ -36,6 +36,7 @@ class TestIntelligenceProvider implements IRevIntelligenceProvider {
 		private readonly failingModelIds: ReadonlySet<string> = new Set(),
 		kind?: IRevIntelligenceProviderDescriptor['kind'],
 		private readonly streamBehaviors: ReadonlyMap<string, TestStreamBehavior> = new Map(),
+		private readonly nonRetryableModelIds: ReadonlySet<string> = new Set(),
 	) {
 		this.descriptor = {
 			id,
@@ -56,6 +57,9 @@ class TestIntelligenceProvider implements IRevIntelligenceProvider {
 	async generate(request: IRevIntelligenceRequest): Promise<IRevIntelligenceResponse> {
 		this.attempts.push(request.model.id);
 		this.requests.push(request);
+		if (this.nonRetryableModelIds.has(request.model.id)) {
+			throw new RevAssistantError(`non-retryable test failure: ${request.model.id}`, 'provider-failed', false);
+		}
 		if (this.failingModelIds.has(request.model.id)) {
 			throw new Error(`test failure: ${request.model.id}`);
 		}
@@ -92,6 +96,15 @@ class TestIntelligenceProvider implements IRevIntelligenceProvider {
 		if (behavior === 'fail-after-token') {
 			onEvent({ type: 'token', requestId: request.requestId, token: 'partial' });
 			throw new Error(`stream failed after output: ${request.model.id}`);
+		}
+		if (behavior === 'tokens-empty-final') {
+			onEvent({ type: 'token', requestId: request.requestId, token: 'streamed ' });
+			onEvent({ type: 'token', requestId: request.requestId, token: 'answer' });
+			return {
+				requestId: request.requestId,
+				modelId: request.model.id,
+				content: '',
+			};
 		}
 
 		return new Promise<IRevIntelligenceResponse>((_resolve, reject) => {
@@ -191,6 +204,17 @@ suite('Ryzova Rev Assistant', function () {
 		const contextRoutes = await registry.resolveAssistantRoutes('assistant', { minimumContextWindow: 8192 });
 		assert.deepStrictEqual(contextRoutes.map(route => route.model.id), ['large']);
 
+		const unknownContextRegistration = registry.registerProvider(new TestIntelligenceProvider('unknown-context', 'rev-assistant', [{
+			id: 'unknown-context-model',
+			providerId: 'unknown-context',
+			displayName: 'Unknown Context',
+			task: 'assistant',
+			priority: 1000,
+		}]));
+		const constrainedRoutes = await registry.resolveAssistantRoutes('assistant', { minimumContextWindow: 8192 });
+		assert.deepStrictEqual(constrainedRoutes.map(route => route.model.id), ['large']);
+		unknownContextRegistration.dispose();
+
 		const visionRoutes = await registry.resolveAssistantRoutes('vision', { requireVision: true });
 		assert.deepStrictEqual(visionRoutes.map(route => route.model.id), ['vision']);
 
@@ -224,6 +248,50 @@ suite('Ryzova Rev Assistant', function () {
 		registration.dispose();
 	});
 
+	test('restores, orders, and deletes local conversation snapshots safely', function () {
+		const registry = new RevIntelligenceRegistryService();
+		const service = new RevAssistantService(registry, new TestAssistantContextService());
+		const deleted: string[] = [];
+		const listener = service.onDidDeleteConversation(id => deleted.push(id));
+
+		service.restoreConversation({
+			id: 'older',
+			createdAt: 10,
+			updatedAt: 20,
+			messages: [{
+				id: 'older-message',
+				role: 'user',
+				content: 'older',
+				createdAt: 15,
+			}],
+		});
+		service.restoreConversation({
+			id: 'newer',
+			createdAt: 30,
+			updatedAt: 40,
+			messages: [{
+				id: 'newer-message',
+				role: 'assistant',
+				content: 'newer',
+				createdAt: 40,
+			}],
+		});
+
+		assert.deepStrictEqual(service.listConversations().map(conversation => conversation.id), ['newer', 'older']);
+		assert.strictEqual(service.getConversation('newer')?.messages[0].content, 'newer');
+		assert.throws(() => service.restoreConversation({
+			id: '',
+			createdAt: 0,
+			updatedAt: 0,
+			messages: [],
+		}), /ID must not be empty/);
+		assert.strictEqual(service.deleteConversation('older'), true);
+		assert.deepStrictEqual(deleted, ['older']);
+
+		listener.dispose();
+		service.dispose();
+	});
+
 	test('assistant falls back to the next ranked model when the preferred route fails', async function () {
 		const registry = new RevIntelligenceRegistryService();
 		const provider = new TestIntelligenceProvider('builtin', 'rev-assistant', [
@@ -243,6 +311,41 @@ suite('Ryzova Rev Assistant', function () {
 		assert.strictEqual(reply.modelId, 'fallback');
 		assert.deepStrictEqual(provider.attempts, ['primary', 'fallback']);
 		assert.strictEqual(reply.conversation.messages.length, 2);
+
+		service.dispose();
+		registration.dispose();
+	});
+
+	test('assistant does not retry a route after a non-retryable provider failure', async function () {
+		const registry = new RevIntelligenceRegistryService();
+		const provider = new TestIntelligenceProvider(
+			'builtin',
+			'rev-assistant',
+			[
+				{ id: 'primary', providerId: 'builtin', displayName: 'Primary', task: 'assistant', priority: 100 },
+				{ id: 'fallback', providerId: 'builtin', displayName: 'Fallback', task: 'assistant', priority: 90 },
+			],
+			'reply',
+			new Set(),
+			undefined,
+			new Map(),
+			new Set(['primary']),
+		);
+		const registration = registry.registerProvider(provider);
+		const service = new RevAssistantService(registry, new TestAssistantContextService());
+		service.createConversation('conversation-non-retryable');
+
+		await assert.rejects(
+			() => service.ask({
+				conversationId: 'conversation-non-retryable',
+				content: 'Explain the error',
+				intent: 'explain',
+			}),
+			(error: unknown) => error instanceof RevAssistantError && error.retryable === false,
+		);
+
+		assert.deepStrictEqual(provider.attempts, ['primary']);
+		assert.strictEqual(service.getConversation('conversation-non-retryable')?.messages.length, 1);
 
 		service.dispose();
 		registration.dispose();
@@ -311,6 +414,35 @@ suite('Ryzova Rev Assistant', function () {
 		assert.ok(events.every(event => event.requestId === 'assistant-request-1'));
 		assert.strictEqual(reply.conversation.messages.length, 2);
 		assert.strictEqual(service.isRunning('assistant-request-1'), false);
+
+		service.dispose();
+		registration.dispose();
+	});
+
+	test('persists streamed output when a provider returns an empty final payload', async function () {
+		const registry = new RevIntelligenceRegistryService();
+		const provider = new TestIntelligenceProvider(
+			'builtin',
+			'rev-assistant',
+			[{ id: 'stream-only', providerId: 'builtin', displayName: 'Stream Only', task: 'assistant' }],
+			'reply',
+			new Set(),
+			undefined,
+			new Map([['stream-only', 'tokens-empty-final']]),
+		);
+		const registration = registry.registerProvider(provider);
+		const service = new RevAssistantService(registry, new TestAssistantContextService());
+		service.createConversation('conversation-stream-only');
+
+		const reply = await service.stream({
+			requestId: 'assistant-request-stream-only',
+			conversationId: 'conversation-stream-only',
+			content: 'Explain streamed output',
+			intent: 'explain',
+		});
+
+		assert.strictEqual(reply.message.content, 'streamed answer');
+		assert.strictEqual(reply.conversation.messages.at(-1)?.content, 'streamed answer');
 
 		service.dispose();
 		registration.dispose();
