@@ -75,6 +75,7 @@ Phase 5B adds the on-device execution path: Rev can discover, download, load, st
 - Route constraints can require vision support or a minimum known context window.
 - The built-in provider exposes a bounded fallback set per task rather than a single fragile route.
 - The intelligence registry returns an ordered route list while continuing to exclude engineering-scoped providers from Rev Assistant.
+- Minimum-context routing constraints require a known model context window; unknown capacity is never treated as satisfying an explicit minimum.
 - Rev Assistant retries the next compatible route when inference fails, but never retries cancellation.
 - Routing behavior is deterministic and covered by unit tests, including variant aliases, context constraints, vision filtering, and inference fallback.
 
@@ -123,6 +124,7 @@ Phase 5F is now underway with a first-party Rev Assistant sidebar surface. The i
 - Rev owns its product-specific state under `src/vs/platform/ryzova/`.
 - Code - OSS remains the execution substrate for editor, filesystem, terminal, Git, task, debug, extension, and workspace capabilities.
 - Engineering execution follows an explicit lifecycle rather than ad-hoc boolean flags.
+- Workspace/project refreshes cannot replace an active engineering execution, and overlapping execution starts are rejected.
 - Context admission is deterministic and budget-aware.
 - Project awareness is sourced from existing Code - OSS services and automatic file content remains local-only by default.
 - Mutating or externally visible capabilities require an explicit permission decision.
