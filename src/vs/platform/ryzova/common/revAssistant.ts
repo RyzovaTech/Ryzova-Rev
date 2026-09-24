@@ -5,6 +5,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { RevIntelligenceTask } from './revIntelligence.js';
+import type { RevAssistantErrorCode } from './revAssistantErrors.js';
 
 export const revAssistantIntents = [
 	'guide',
@@ -40,6 +41,12 @@ export interface IRevAssistantConversation {
 }
 
 export interface IRevAssistantRequest {
+	/**
+	 * Optional stable ID supplied by callers that need explicit cancellation.
+	 * Rev generates one when omitted and exposes it through streaming events
+	 * and the final reply.
+	 */
+	readonly requestId?: string;
 	readonly conversationId: string;
 	readonly content: string;
 	readonly intent: RevAssistantIntent;
@@ -48,10 +55,47 @@ export interface IRevAssistantRequest {
 }
 
 export interface IRevAssistantReply {
+	readonly requestId: string;
 	readonly conversation: IRevAssistantConversation;
 	readonly message: IRevAssistantMessage;
 	readonly modelId: string;
 }
+
+export type RevAssistantStreamEvent =
+	| {
+		readonly type: 'started';
+		readonly requestId: string;
+		readonly conversationId: string;
+		readonly intent: RevAssistantIntent;
+	}
+	| {
+		readonly type: 'route';
+		readonly requestId: string;
+		readonly attempt: number;
+		readonly providerId: string;
+		readonly modelId: string;
+	}
+	| {
+		readonly type: 'token';
+		readonly requestId: string;
+		readonly token: string;
+	}
+	| {
+		readonly type: 'completed';
+		readonly requestId: string;
+		readonly reply: IRevAssistantReply;
+	}
+	| {
+		readonly type: 'cancelled';
+		readonly requestId: string;
+	}
+	| {
+		readonly type: 'error';
+		readonly requestId: string;
+		readonly code: RevAssistantErrorCode;
+		readonly message: string;
+		readonly retryable: boolean;
+	};
 
 export function revAssistantTaskForIntent(intent: RevAssistantIntent): RevIntelligenceTask {
 	switch (intent) {
@@ -69,6 +113,9 @@ export function revAssistantTaskForIntent(intent: RevAssistantIntent): RevIntell
 }
 
 export function assertRevAssistantRequestAllowed(request: IRevAssistantRequest): void {
+	if (request.requestId !== undefined && !request.requestId.trim()) {
+		throw new Error('Rev Assistant request ID must not be empty when provided.');
+	}
 	if (!request.content.trim()) {
 		throw new Error('Rev Assistant request must not be empty.');
 	}

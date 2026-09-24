@@ -15,10 +15,22 @@ import {
 	IRevAssistantReply,
 	IRevAssistantRequest,
 	REV_ASSISTANT_SYSTEM_CHARTER,
+	RevAssistantStreamEvent,
 	revAssistantTaskForIntent,
 } from './revAssistant.js';
 import { estimateRevContextTokens, IRevAssistantContextService } from './revAssistantContext.js';
-import { IRevIntelligenceMessage, IRevIntelligenceRequest, IRevIntelligenceResponse } from './revIntelligence.js';
+import {
+	createRevAssistantCancelledError,
+	isRevAssistantCancellationError,
+	RevAssistantError,
+	toRevAssistantError,
+} from './revAssistantErrors.js';
+import {
+	IRevIntelligenceMessage,
+	IRevIntelligenceProvider,
+	IRevIntelligenceRequest,
+	IRevIntelligenceResponse,
+} from './revIntelligence.js';
 import { IRevIntelligenceRegistryService, IRevIntelligenceRoute } from './revIntelligenceRegistry.js';
 
 export const IRevAssistantService = createDecorator<IRevAssistantService>('revAssistantService');
@@ -27,11 +39,19 @@ export interface IRevAssistantService {
 	readonly _serviceBrand: undefined;
 
 	readonly onDidChangeConversation: Event<IRevAssistantConversation>;
+	readonly onDidStreamEvent: Event<RevAssistantStreamEvent>;
 
 	createConversation(id?: string): IRevAssistantConversation;
 	getConversation(id: string): IRevAssistantConversation | undefined;
 	deleteConversation(id: string): boolean;
 	ask(request: IRevAssistantRequest, signal?: AbortSignal): Promise<IRevAssistantReply>;
+	stream(
+		request: IRevAssistantRequest,
+		onEvent?: (event: RevAssistantStreamEvent) => void,
+		signal?: AbortSignal,
+	): Promise<IRevAssistantReply>;
+	cancel(requestId: string): Promise<boolean>;
+	isRunning(requestId: string): boolean;
 }
 
 interface IMutableRevAssistantConversation {
@@ -41,13 +61,31 @@ interface IMutableRevAssistantConversation {
 	messages: IRevAssistantMessage[];
 }
 
+interface IActiveRevAssistantRequest {
+	readonly requestId: string;
+	readonly conversationId: string;
+	readonly controller: AbortController;
+	provider?: IRevIntelligenceProvider;
+	providerRequestId?: string;
+}
+
+interface IRouteResult {
+	readonly route: IRevIntelligenceRoute;
+	readonly response: IRevIntelligenceResponse;
+}
+
 export class RevAssistantService extends Disposable implements IRevAssistantService {
 	declare readonly _serviceBrand: undefined;
 
 	private readonly _onDidChangeConversation = this._register(new Emitter<IRevAssistantConversation>());
 	readonly onDidChangeConversation = this._onDidChangeConversation.event;
 
+	private readonly _onDidStreamEvent = this._register(new Emitter<RevAssistantStreamEvent>());
+	readonly onDidStreamEvent = this._onDidStreamEvent.event;
+
 	private readonly conversations = new Map<string, IMutableRevAssistantConversation>();
+	private readonly activeRequests = new Map<string, IActiveRevAssistantRequest>();
+	private readonly activeConversationRequests = new Map<string, string>();
 
 	constructor(
 		@IRevIntelligenceRegistryService private readonly intelligenceRegistry: IRevIntelligenceRegistryService,
@@ -81,113 +119,321 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 	}
 
 	deleteConversation(id: string): boolean {
+		if (this.activeConversationRequests.has(id)) {
+			return false;
+		}
 		return this.conversations.delete(id);
 	}
 
-	async ask(request: IRevAssistantRequest, signal?: AbortSignal): Promise<IRevAssistantReply> {
+	ask(request: IRevAssistantRequest, signal?: AbortSignal): Promise<IRevAssistantReply> {
+		return this.stream(request, undefined, signal);
+	}
+
+	async stream(
+		request: IRevAssistantRequest,
+		onEvent?: (event: RevAssistantStreamEvent) => void,
+		signal?: AbortSignal,
+	): Promise<IRevAssistantReply> {
 		assertRevAssistantRequestAllowed(request);
+		if (signal?.aborted) {
+			throw createRevAssistantCancelledError();
+		}
 
 		const conversation = this.conversations.get(request.conversationId);
 		if (!conversation) {
 			throw new Error(`Unknown Rev Assistant conversation: ${request.conversationId}`);
 		}
 
-		const userMessage: IRevAssistantMessage = {
-			id: generateUuid(),
-			role: 'user',
-			content: request.content,
-			createdAt: Date.now(),
-		};
-		conversation.messages.push(userMessage);
-		conversation.updatedAt = userMessage.createdAt;
-		this.fireConversation(conversation);
-
-		const task = revAssistantTaskForIntent(request.intent);
-		const conversationMessages: IRevIntelligenceMessage[] = conversation.messages.map(message => ({
-			role: message.role,
-			content: message.content,
-		}));
-		const basePromptTokens = estimateRevContextTokens(REV_ASSISTANT_SYSTEM_CHARTER)
-			+ conversationMessages.reduce((total, message) => total + estimateRevContextTokens(message.content), 0);
-		const routes = await this.intelligenceRegistry.resolveAssistantRoutes(task, {
-			requireVision: request.intent === 'visual-analysis',
-			minimumContextWindow: basePromptTokens + 1024,
-		});
-		if (!routes.length) {
-			throw new Error(`No Rev Assistant model is available for task: ${task}.`);
+		const requestId = request.requestId?.trim() || generateUuid();
+		if (this.activeRequests.has(requestId)) {
+			throw new RevAssistantError(`Rev Assistant request is already running: ${requestId}`, 'busy', true);
+		}
+		const activeConversationRequest = this.activeConversationRequests.get(conversation.id);
+		if (activeConversationRequest) {
+			throw new RevAssistantError(
+				`Rev Assistant conversation already has an active request: ${activeConversationRequest}`,
+				'busy',
+				true,
+			);
 		}
 
-		const { route, response } = await this.generateWithFallback(routes, {
-			task,
-			allowCodeAuthoring: request.intent === 'code-authoring' && request.allowCodeAuthoring === true,
-			...(request.imageReferences === undefined ? {} : { imageReferences: request.imageReferences }),
-		}, async route => {
-			const context = await this.assistantContextService.buildContext({
-				prompt: request.content,
-				contextWindow: route.model.contextWindow,
-				reservedOutputTokens: route.model.maxOutputTokens,
-				basePromptTokens,
-				// Until an explicit data-sharing policy exists, automatic project
-				// contents stay on-device even when a future remote assistant route
-				// participates in fallback.
-				includeWorkspaceContents: route.provider.descriptor.kind === 'built-in-local',
+		const controller = new AbortController();
+		const active: IActiveRevAssistantRequest = {
+			requestId,
+			conversationId: conversation.id,
+			controller,
+		};
+		this.activeRequests.set(requestId, active);
+		this.activeConversationRequests.set(conversation.id, requestId);
+
+		const abortFromCaller = () => controller.abort();
+		signal?.addEventListener('abort', abortFromCaller, { once: true });
+
+		const emit = (event: RevAssistantStreamEvent): void => {
+			try {
+				onEvent?.(event);
+			} catch {
+				// A UI/event consumer must not be able to break an inference turn.
+			}
+			this._onDidStreamEvent.fire(event);
+		};
+
+		emit({
+			type: 'started',
+			requestId,
+			conversationId: conversation.id,
+			intent: request.intent,
+		});
+
+		try {
+			const userMessage: IRevAssistantMessage = {
+				id: generateUuid(),
+				role: 'user',
+				content: request.content,
+				createdAt: Date.now(),
+			};
+			conversation.messages.push(userMessage);
+			conversation.updatedAt = userMessage.createdAt;
+			this.fireConversation(conversation);
+
+			const task = revAssistantTaskForIntent(request.intent);
+			const conversationMessages: IRevIntelligenceMessage[] = conversation.messages.map(message => ({
+				role: message.role,
+				content: message.content,
+			}));
+			const basePromptTokens = estimateRevContextTokens(REV_ASSISTANT_SYSTEM_CHARTER)
+				+ conversationMessages.reduce((total, message) => total + estimateRevContextTokens(message.content), 0);
+			const routes = await this.intelligenceRegistry.resolveAssistantRoutes(task, {
+				requireVision: request.intent === 'visual-analysis',
+				minimumContextWindow: basePromptTokens + 1024,
 			});
+			if (!routes.length) {
+				throw new RevAssistantError(`No Rev Assistant model is available for task: ${task}.`, 'no-route', true);
+			}
 
-			return [
-				{ role: 'system', content: REV_ASSISTANT_SYSTEM_CHARTER },
-				...(context.message ? [context.message] : []),
-				...conversationMessages,
-			];
-		}, signal);
+			const { route, response } = await this.runRoutes(
+				requestId,
+				active,
+				routes,
+				{
+					task,
+					allowCodeAuthoring: request.intent === 'code-authoring' && request.allowCodeAuthoring === true,
+					...(request.imageReferences === undefined ? {} : { imageReferences: request.imageReferences }),
+				},
+				async route => {
+					if (controller.signal.aborted) {
+						throw createRevAssistantCancelledError();
+					}
+					const context = await this.assistantContextService.buildContext({
+						prompt: request.content,
+						contextWindow: route.model.contextWindow,
+						reservedOutputTokens: route.model.maxOutputTokens,
+						basePromptTokens,
+						// Until an explicit data-sharing policy exists, automatic project
+						// contents stay on-device even when a future remote assistant route
+						// participates in fallback.
+						includeWorkspaceContents: route.provider.descriptor.kind === 'built-in-local',
+					});
 
-		const assistantMessage: IRevAssistantMessage = {
-			id: generateUuid(),
-			role: 'assistant',
-			content: response.content,
-			createdAt: Date.now(),
-		};
-		conversation.messages.push(assistantMessage);
-		conversation.updatedAt = assistantMessage.createdAt;
-		const snapshot = this.fireConversation(conversation);
+					return [
+						{ role: 'system', content: REV_ASSISTANT_SYSTEM_CHARTER },
+						...(context.message ? [context.message] : []),
+						...conversationMessages,
+					];
+				},
+				emit,
+				controller.signal,
+			);
 
-		return {
-			conversation: snapshot,
-			message: assistantMessage,
-			modelId: response.modelId || route.model.id,
-		};
-	}
-
-	private async generateWithFallback(
-		routes: readonly IRevIntelligenceRoute[],
-		request: Omit<IRevIntelligenceRequest, 'requestId' | 'model' | 'messages'>,
-		buildMessages: (route: IRevIntelligenceRoute) => Promise<readonly IRevIntelligenceMessage[]>,
-		signal?: AbortSignal,
-	): Promise<{ readonly route: IRevIntelligenceRoute; readonly response: IRevIntelligenceResponse }> {
-		let lastError: unknown;
-		for (const route of routes) {
-			if (signal?.aborted) {
+			if (controller.signal.aborted) {
 				throw createRevAssistantCancelledError();
 			}
 
-			const modelRequest: IRevIntelligenceRequest = {
-				...request,
-				requestId: generateUuid(),
-				model: route.model,
-				messages: await buildMessages(route),
+			const assistantMessage: IRevAssistantMessage = {
+				id: generateUuid(),
+				role: 'assistant',
+				content: response.content,
+				createdAt: Date.now(),
 			};
+			conversation.messages.push(assistantMessage);
+			conversation.updatedAt = assistantMessage.createdAt;
+			const snapshot = this.fireConversation(conversation);
+
+			const reply: IRevAssistantReply = {
+				requestId,
+				conversation: snapshot,
+				message: assistantMessage,
+				modelId: response.modelId || route.model.id,
+			};
+			emit({ type: 'completed', requestId, reply });
+			return reply;
+		} catch (error) {
+			const normalized = toRevAssistantError(error);
+			if (normalized.code === 'cancelled' || controller.signal.aborted) {
+				emit({ type: 'cancelled', requestId });
+				throw createRevAssistantCancelledError(normalized.message);
+			}
+			emit({
+				type: 'error',
+				requestId,
+				code: normalized.code,
+				message: normalized.message,
+				retryable: normalized.retryable,
+			});
+			throw normalized;
+		} finally {
+			signal?.removeEventListener('abort', abortFromCaller);
+			this.activeRequests.delete(requestId);
+			if (this.activeConversationRequests.get(conversation.id) === requestId) {
+				this.activeConversationRequests.delete(conversation.id);
+			}
+		}
+	}
+
+	async cancel(requestId: string): Promise<boolean> {
+		const active = this.activeRequests.get(requestId);
+		if (!active) {
+			return false;
+		}
+
+		active.controller.abort();
+		if (active.provider?.cancel && active.providerRequestId) {
 			try {
-				const response = await route.provider.generate(modelRequest, signal);
+				await active.provider.cancel(active.providerRequestId);
+			} catch {
+				// Cancellation is best-effort at the provider boundary. The
+				// AbortSignal still prevents fallback or message finalization.
+			}
+		}
+		return true;
+	}
+
+	isRunning(requestId: string): boolean {
+		return this.activeRequests.has(requestId);
+	}
+
+	override dispose(): void {
+		for (const active of this.activeRequests.values()) {
+			active.controller.abort();
+			if (active.provider?.cancel && active.providerRequestId) {
+				void active.provider.cancel(active.providerRequestId).catch(() => { /* best effort */ });
+			}
+		}
+		this.activeRequests.clear();
+		this.activeConversationRequests.clear();
+		super.dispose();
+	}
+
+	private async runRoutes(
+		assistantRequestId: string,
+		active: IActiveRevAssistantRequest,
+		routes: readonly IRevIntelligenceRoute[],
+		request: Omit<IRevIntelligenceRequest, 'requestId' | 'model' | 'messages'>,
+		buildMessages: (route: IRevIntelligenceRoute) => Promise<readonly IRevIntelligenceMessage[]>,
+		emit: (event: RevAssistantStreamEvent) => void,
+		signal: AbortSignal,
+	): Promise<IRouteResult> {
+		let lastError: RevAssistantError | undefined;
+
+		for (let index = 0; index < routes.length; index++) {
+			if (signal.aborted) {
+				throw createRevAssistantCancelledError();
+			}
+
+			const route = routes[index];
+			const providerRequestId = generateUuid();
+			active.provider = route.provider;
+			active.providerRequestId = providerRequestId;
+			emit({
+				type: 'route',
+				requestId: assistantRequestId,
+				attempt: index + 1,
+				providerId: route.provider.descriptor.id,
+				modelId: route.model.id,
+			});
+
+			let emittedToken = false;
+			try {
+				const messages = await buildMessages(route);
+				if (signal.aborted) {
+					throw createRevAssistantCancelledError();
+				}
+
+				const modelRequest: IRevIntelligenceRequest = {
+					...request,
+					requestId: providerRequestId,
+					model: route.model,
+					messages,
+				};
+
+				let response: IRevIntelligenceResponse;
+				if (route.provider.stream) {
+					response = await route.provider.stream(
+						modelRequest,
+						event => {
+							if (event.type === 'token' && event.token) {
+								emittedToken = true;
+								emit({
+									type: 'token',
+									requestId: assistantRequestId,
+									token: event.token,
+								});
+							}
+						},
+						signal,
+					);
+					if (!emittedToken && response.content) {
+						emittedToken = true;
+						emit({
+							type: 'token',
+							requestId: assistantRequestId,
+							token: response.content,
+						});
+					}
+				} else {
+					response = await route.provider.generate(modelRequest, signal);
+					if (response.content) {
+						emittedToken = true;
+						emit({
+							type: 'token',
+							requestId: assistantRequestId,
+							token: response.content,
+						});
+					}
+				}
+
 				return { route, response };
 			} catch (error) {
-				if (signal?.aborted || isCancellationError(error)) {
-					throw error;
+				if (signal.aborted || isRevAssistantCancellationError(error)) {
+					throw createRevAssistantCancelledError(error instanceof Error ? error.message : undefined);
 				}
-				lastError = error;
+
+				const normalized = toRevAssistantError(error);
+				if (emittedToken) {
+					throw new RevAssistantError(
+						`Rev Assistant stream failed after output began: ${normalized.message}`,
+						'stream-failed',
+						normalized.retryable,
+						normalized,
+					);
+				}
+
+				lastError = normalized;
+			} finally {
+				if (active.provider === route.provider && active.providerRequestId === providerRequestId) {
+					active.provider = undefined;
+					active.providerRequestId = undefined;
+				}
 			}
 		}
 
-		const detail = lastError instanceof Error ? `: ${lastError.message}` : '';
-		throw new Error(`Every compatible Rev Assistant route failed${detail}`);
+		const detail = lastError ? `: ${lastError.message}` : '';
+		throw new RevAssistantError(
+			`Every compatible Rev Assistant route failed${detail}`,
+			'all-routes-failed',
+			lastError?.retryable ?? true,
+			lastError,
+		);
 	}
 
 	private fireConversation(conversation: IMutableRevAssistantConversation): IRevAssistantConversation {
@@ -204,18 +450,4 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 			messages: conversation.messages.map(message => ({ ...message })),
 		};
 	}
-}
-
-function isCancellationError(error: unknown): boolean {
-	if (!(error instanceof Error)) {
-		return false;
-	}
-	const code = (error as Error & { code?: string }).code;
-	return code === 'ERR_REV_CANCELLED' || error.name === 'AbortError' || /cancelled|canceled/i.test(error.message);
-}
-
-function createRevAssistantCancelledError(): Error {
-	const error = new Error('Rev Assistant request was cancelled.');
-	(error as Error & { code?: string }).code = 'ERR_REV_CANCELLED';
-	return error;
 }

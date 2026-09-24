@@ -6,6 +6,8 @@
 
 import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
+import { RevAssistantStreamEvent } from '../../common/revAssistant.js';
+import { RevAssistantError } from '../../common/revAssistantErrors.js';
 import { RevAssistantService } from '../../common/revAssistantService.js';
 import { buildRevAssistantContextSnapshot, createRevAssistantContextContribution, IRevAssistantContextBuildRequest, IRevAssistantContextService } from '../../common/revAssistantContext.js';
 import {
@@ -18,10 +20,13 @@ import {
 } from '../../common/revIntelligence.js';
 import { RevIntelligenceRegistryService } from '../../common/revIntelligenceRegistry.js';
 
+type TestStreamBehavior = 'fail-before-token' | 'fail-after-token' | 'wait-for-cancel';
+
 class TestIntelligenceProvider implements IRevIntelligenceProvider {
 	readonly descriptor: IRevIntelligenceProviderDescriptor;
 	readonly attempts: string[] = [];
 	readonly requests: IRevIntelligenceRequest[] = [];
+	readonly cancelled: string[] = [];
 
 	constructor(
 		id: string,
@@ -30,6 +35,7 @@ class TestIntelligenceProvider implements IRevIntelligenceProvider {
 		private readonly prefix = 'reply',
 		private readonly failingModelIds: ReadonlySet<string> = new Set(),
 		kind?: IRevIntelligenceProviderDescriptor['kind'],
+		private readonly streamBehaviors: ReadonlyMap<string, TestStreamBehavior> = new Map(),
 	) {
 		this.descriptor = {
 			id,
@@ -58,6 +64,52 @@ class TestIntelligenceProvider implements IRevIntelligenceProvider {
 			modelId: request.model.id,
 			content: `${this.prefix}:${request.task}:${request.messages.at(-1)?.content ?? ''}`,
 		};
+	}
+
+	async stream(
+		request: IRevIntelligenceRequest,
+		onEvent: (event: import('../../common/revIntelligence.js').RevIntelligenceStreamEvent) => void,
+		signal?: AbortSignal,
+	): Promise<IRevIntelligenceResponse> {
+		const behavior = this.streamBehaviors.get(request.model.id);
+		if (!behavior) {
+			const response = await this.generate(request);
+			onEvent({ type: 'started', requestId: request.requestId, modelId: request.model.id });
+			if (response.content) {
+				onEvent({ type: 'token', requestId: request.requestId, token: response.content });
+			}
+			onEvent({ type: 'completed', requestId: request.requestId, response });
+			return response;
+		}
+
+		this.attempts.push(request.model.id);
+		this.requests.push(request);
+		onEvent({ type: 'started', requestId: request.requestId, modelId: request.model.id });
+
+		if (behavior === 'fail-before-token') {
+			throw new Error(`stream failed before output: ${request.model.id}`);
+		}
+		if (behavior === 'fail-after-token') {
+			onEvent({ type: 'token', requestId: request.requestId, token: 'partial' });
+			throw new Error(`stream failed after output: ${request.model.id}`);
+		}
+
+		return new Promise<IRevIntelligenceResponse>((_resolve, reject) => {
+			const cancel = () => {
+				const error = new Error('test stream cancelled');
+				(error as Error & { code?: string }).code = 'ERR_REV_CANCELLED';
+				reject(error);
+			};
+			if (signal?.aborted) {
+				cancel();
+				return;
+			}
+			signal?.addEventListener('abort', cancel, { once: true });
+		});
+	}
+
+	async cancel(requestId: string): Promise<void> {
+		this.cancelled.push(requestId);
 	}
 }
 
@@ -232,6 +284,139 @@ suite('Ryzova Rev Assistant', function () {
 		service.dispose();
 		localRegistration.dispose();
 		remoteRegistration.dispose();
+	});
+
+	test('streams assistant lifecycle and token events with a stable request ID', async function () {
+		const registry = new RevIntelligenceRegistryService();
+		const provider = new TestIntelligenceProvider('builtin', 'rev-assistant', [{
+			id: 'stream-model',
+			providerId: 'builtin',
+			displayName: 'Stream Model',
+			task: 'assistant',
+		}]);
+		const registration = registry.registerProvider(provider);
+		const service = new RevAssistantService(registry, new TestAssistantContextService());
+		service.createConversation('conversation-stream');
+		const events: RevAssistantStreamEvent[] = [];
+
+		const reply = await service.stream({
+			requestId: 'assistant-request-1',
+			conversationId: 'conversation-stream',
+			content: 'Explain streaming',
+			intent: 'explain',
+		}, event => events.push(event));
+
+		assert.strictEqual(reply.requestId, 'assistant-request-1');
+		assert.deepStrictEqual(events.map(event => event.type), ['started', 'route', 'token', 'completed']);
+		assert.ok(events.every(event => event.requestId === 'assistant-request-1'));
+		assert.strictEqual(reply.conversation.messages.length, 2);
+		assert.strictEqual(service.isRunning('assistant-request-1'), false);
+
+		service.dispose();
+		registration.dispose();
+	});
+
+	test('does not switch models after streamed output has started', async function () {
+		const registry = new RevIntelligenceRegistryService();
+		const provider = new TestIntelligenceProvider(
+			'builtin',
+			'rev-assistant',
+			[
+				{ id: 'primary', providerId: 'builtin', displayName: 'Primary', task: 'assistant', priority: 100 },
+				{ id: 'fallback', providerId: 'builtin', displayName: 'Fallback', task: 'assistant', priority: 90 },
+			],
+			'reply',
+			new Set(),
+			undefined,
+			new Map([['primary', 'fail-after-token']]),
+		);
+		const registration = registry.registerProvider(provider);
+		const service = new RevAssistantService(registry, new TestAssistantContextService());
+		service.createConversation('conversation-partial');
+		const events: RevAssistantStreamEvent[] = [];
+
+		await assert.rejects(
+			() => service.stream({
+				requestId: 'assistant-request-partial',
+				conversationId: 'conversation-partial',
+				content: 'Explain safely',
+				intent: 'explain',
+			}, event => events.push(event)),
+			(error: unknown) => error instanceof RevAssistantError && error.code === 'stream-failed',
+		);
+
+		assert.deepStrictEqual(provider.attempts, ['primary']);
+		assert.deepStrictEqual(events.map(event => event.type), ['started', 'route', 'token', 'error']);
+		assert.strictEqual(service.getConversation('conversation-partial')?.messages.length, 1);
+
+		service.dispose();
+		registration.dispose();
+	});
+
+	test('cancels an active streaming request without finalizing a partial assistant message', async function () {
+		const registry = new RevIntelligenceRegistryService();
+		const provider = new TestIntelligenceProvider(
+			'builtin',
+			'rev-assistant',
+			[{ id: 'waiting', providerId: 'builtin', displayName: 'Waiting', task: 'assistant' }],
+			'reply',
+			new Set(),
+			undefined,
+			new Map([['waiting', 'wait-for-cancel']]),
+		);
+		const registration = registry.registerProvider(provider);
+		const service = new RevAssistantService(registry, new TestAssistantContextService());
+		service.createConversation('conversation-cancel');
+		const events: RevAssistantStreamEvent[] = [];
+		let routedResolve!: () => void;
+		const routed = new Promise<void>(resolve => { routedResolve = resolve; });
+
+		const pending = service.stream({
+			requestId: 'assistant-request-cancel',
+			conversationId: 'conversation-cancel',
+			content: 'Keep thinking',
+			intent: 'explain',
+		}, event => {
+			events.push(event);
+			if (event.type === 'route') {
+				routedResolve();
+			}
+		});
+
+		await routed;
+		assert.strictEqual(service.isRunning('assistant-request-cancel'), true);
+		assert.strictEqual(await service.cancel('assistant-request-cancel'), true);
+
+		await assert.rejects(
+			() => pending,
+			(error: unknown) => error instanceof RevAssistantError && error.code === 'cancelled',
+		);
+		assert.ok(events.some(event => event.type === 'cancelled'));
+		assert.ok(!events.some(event => event.type === 'completed'));
+		assert.strictEqual(service.getConversation('conversation-cancel')?.messages.length, 1);
+		assert.strictEqual(provider.cancelled.length, 1);
+		assert.strictEqual(service.isRunning('assistant-request-cancel'), false);
+
+		service.dispose();
+		registration.dispose();
+	});
+
+	test('returns a structured no-route error when no assistant model is available', async function () {
+		const registry = new RevIntelligenceRegistryService();
+		const service = new RevAssistantService(registry, new TestAssistantContextService());
+		service.createConversation('conversation-no-route');
+
+		await assert.rejects(
+			() => service.ask({
+				requestId: 'assistant-request-no-route',
+				conversationId: 'conversation-no-route',
+				content: 'Explain this',
+				intent: 'explain',
+			}),
+			(error: unknown) => error instanceof RevAssistantError && error.code === 'no-route',
+		);
+
+		service.dispose();
 	});
 
 	test('code authoring requires explicit per-request opt-in', async function () {

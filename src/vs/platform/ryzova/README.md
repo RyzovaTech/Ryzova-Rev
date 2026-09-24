@@ -8,7 +8,8 @@ This directory is the stable boundary between the Code - OSS platform and Ryzova
 **Phase 5 — Rev Assistant + Built-in Intelligence: in progress.**  
 **Phase 5B — Built-in Local Model Runtime: complete.**  
 **Phase 5C — Model Catalog + Routing: complete.**  
-**Phase 5D — Project / Context Awareness: complete.**
+**Phase 5D — Project / Context Awareness: complete.**  
+**Phase 5E — Streaming / Cancellation / Error Handling: complete.**
 
 Phase 5 extends the Phase 4 boundary with a dedicated assistant intelligence path that is intentionally separate from external engineering models. Rev Assistant must remain available independently of BYOK/local coding-model configuration, while engineering-model execution stays reserved for Phase 6.
 
@@ -83,6 +84,17 @@ Phase 5B adds the on-device execution path: Rev can discover, download, load, st
 - Workspace-derived context is explicitly marked as untrusted data so source files cannot silently become assistant instructions.
 - Automatic workspace contents are attached only to `built-in-local` Rev Assistant routes. A fallback to a remote/external assistant route rebuilds the request without automatic project contents until an explicit data-sharing policy exists.
 - Phase 5D only supplies read-only understanding context. It does not grant filesystem, terminal, Git, or engineering-tool execution; those boundaries remain reserved for Phase 6.
+
+### Phase 5E streaming, cancellation, and errors
+
+- Rev Assistant now exposes a first-class streaming lifecycle with stable assistant request IDs and started → route → token → completed events.
+- Callers can cancel an active turn by request ID; cancellation is propagated through AbortSignal and the active provider's cancellation hook when available.
+- Conversation ordering is protected by allowing only one active assistant turn per conversation at a time.
+- Partial model output is never committed to conversation history. Only a successfully completed response becomes an assistant message.
+- Route fallback remains safe: Rev can try the next route when a provider fails before emitting output, but it will not mix providers after the first visible token has been streamed.
+- Structured RevAssistantError codes distinguish cancellation, busy conversations, no-route conditions, provider failures, stream failures, timeouts, and exhausted fallback routes.
+- Provider/UI event-consumer failures are isolated from the inference turn, while runtime errors are normalized into retryability-aware assistant events.
+- Existing non-streaming ask() callers use the same execution path as streaming callers, preventing cancellation/fallback behavior from diverging between APIs.
 
 ## Architecture guarantees
 
