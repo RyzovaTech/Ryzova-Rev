@@ -111,6 +111,10 @@ suite('Ryzova Rev Core Architecture', function () {
 		});
 		assert.strictEqual(registry.get('spaced-tool')?.id, 'spaced-tool');
 		assert.ok(registry.list().some(tool => tool.id === 'spaced-tool'));
+		assert.strictEqual(registry.has(' spaced-tool '), true);
+		assert.strictEqual(registry.get(' spaced-tool ')?.id, 'spaced-tool');
+		assert.strictEqual(registry.unregister(' spaced-tool '), true);
+		assert.strictEqual(registry.has('spaced-tool'), false);
 		assert.throws(() => registry.register({
 			id: 'a-tool',
 			description: 'Duplicate',
