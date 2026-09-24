@@ -10,7 +10,8 @@ This directory is the stable boundary between the Code - OSS platform and Ryzova
 **Phase 5C — Model Catalog + Routing: complete.**  
 **Phase 5D — Project / Context Awareness: complete.**  
 **Phase 5E — Streaming / Cancellation / Error Handling: complete.**  
-**Phase 5F — Rev Assistant Workbench UI: in progress.**
+**Phase 5F — Rev Assistant Workbench UI: complete.**  
+**Pre-Phase-6 audit — Phases 1–5: in progress.**
 
 Phase 5 extends the Phase 4 boundary with a dedicated assistant intelligence path that is intentionally separate from external engineering models. Rev Assistant must remain available independently of BYOK/local coding-model configuration, while engineering-model execution stays reserved for Phase 6.
 
