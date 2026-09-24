@@ -103,7 +103,7 @@ Phase 5B adds the on-device execution path: Rev can discover, download, load, st
 
 ### Phase 5F workbench UI
 
-Phase 5F is now underway with a first-party Rev Assistant sidebar surface. The initial workbench shell connects directly to the existing Rev Assistant service and exposes project guidance, explanation, planning, diagnosis, live token streaming, cancellation, and conversation reset without granting Phase 6 engineering-tool execution.
+Phase 5F adds a first-party Rev Assistant sidebar surface. The workbench shell connects directly to the existing Rev Assistant service and exposes project guidance, explanation, planning, diagnosis, live token streaming, cancellation, and conversation reset without granting Phase 6 engineering-tool execution.
 
 - Dedicated Rev Assistant activity-bar/sidebar container.
 - Streaming conversation transcript with a non-persistent partial-response surface.
