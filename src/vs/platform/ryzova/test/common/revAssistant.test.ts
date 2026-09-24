@@ -36,6 +36,7 @@ class TestIntelligenceProvider implements IRevIntelligenceProvider {
 		private readonly failingModelIds: ReadonlySet<string> = new Set(),
 		kind?: IRevIntelligenceProviderDescriptor['kind'],
 		private readonly streamBehaviors: ReadonlyMap<string, TestStreamBehavior> = new Map(),
+		private readonly nonRetryableModelIds: ReadonlySet<string> = new Set(),
 	) {
 		this.descriptor = {
 			id,
@@ -56,6 +57,9 @@ class TestIntelligenceProvider implements IRevIntelligenceProvider {
 	async generate(request: IRevIntelligenceRequest): Promise<IRevIntelligenceResponse> {
 		this.attempts.push(request.model.id);
 		this.requests.push(request);
+		if (this.nonRetryableModelIds.has(request.model.id)) {
+			throw new RevAssistantError(`non-retryable test failure: ${request.model.id}`, 'provider-failed', false);
+		}
 		if (this.failingModelIds.has(request.model.id)) {
 			throw new Error(`test failure: ${request.model.id}`);
 		}
@@ -243,6 +247,41 @@ suite('Ryzova Rev Assistant', function () {
 		assert.strictEqual(reply.modelId, 'fallback');
 		assert.deepStrictEqual(provider.attempts, ['primary', 'fallback']);
 		assert.strictEqual(reply.conversation.messages.length, 2);
+
+		service.dispose();
+		registration.dispose();
+	});
+
+	test('assistant does not retry a route after a non-retryable provider failure', async function () {
+		const registry = new RevIntelligenceRegistryService();
+		const provider = new TestIntelligenceProvider(
+			'builtin',
+			'rev-assistant',
+			[
+				{ id: 'primary', providerId: 'builtin', displayName: 'Primary', task: 'assistant', priority: 100 },
+				{ id: 'fallback', providerId: 'builtin', displayName: 'Fallback', task: 'assistant', priority: 90 },
+			],
+			'reply',
+			new Set(),
+			undefined,
+			new Map(),
+			new Set(['primary']),
+		);
+		const registration = registry.registerProvider(provider);
+		const service = new RevAssistantService(registry, new TestAssistantContextService());
+		service.createConversation('conversation-non-retryable');
+
+		await assert.rejects(
+			() => service.ask({
+				conversationId: 'conversation-non-retryable',
+				content: 'Explain the error',
+				intent: 'explain',
+			}),
+			(error: unknown) => error instanceof RevAssistantError && error.retryable === false,
+		);
+
+		assert.deepStrictEqual(provider.attempts, ['primary']);
+		assert.strictEqual(service.getConversation('conversation-non-retryable')?.messages.length, 1);
 
 		service.dispose();
 		registration.dispose();
