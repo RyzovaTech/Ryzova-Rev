@@ -46,7 +46,8 @@ export class RevToolRegistryService implements IRevToolRegistryService {
 		if (this.tools.has(id)) {
 			throw new Error(`Rev tool already registered: ${id}`);
 		}
-		this.tools.set(id, tool);
+		const normalizedTool = id === tool.id ? tool : { ...tool, id };
+		this.tools.set(id, normalizedTool);
 	}
 
 	unregister(id: string): boolean {
