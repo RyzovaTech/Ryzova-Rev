@@ -195,6 +195,17 @@ suite('Ryzova Rev Assistant', function () {
 		const contextRoutes = await registry.resolveAssistantRoutes('assistant', { minimumContextWindow: 8192 });
 		assert.deepStrictEqual(contextRoutes.map(route => route.model.id), ['large']);
 
+		const unknownContextRegistration = registry.registerProvider(new TestIntelligenceProvider('unknown-context', 'rev-assistant', [{
+			id: 'unknown-context-model',
+			providerId: 'unknown-context',
+			displayName: 'Unknown Context',
+			task: 'assistant',
+			priority: 1000,
+		}]));
+		const constrainedRoutes = await registry.resolveAssistantRoutes('assistant', { minimumContextWindow: 8192 });
+		assert.deepStrictEqual(constrainedRoutes.map(route => route.model.id), ['large']);
+		unknownContextRegistration.dispose();
+
 		const visionRoutes = await registry.resolveAssistantRoutes('vision', { requireVision: true });
 		assert.deepStrictEqual(visionRoutes.map(route => route.model.id), ['vision']);
 
