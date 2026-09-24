@@ -11,6 +11,8 @@ This directory is the stable boundary between the Code - OSS platform and Ryzova
 **Phase 5D — Project / Context Awareness: complete.**  
 **Phase 5E — Streaming / Cancellation / Error Handling: complete.**  
 **Phase 5F — Rev Assistant Workbench UI: complete.**  
+**Phase 5G — Local Conversation Memory: complete.**  
+**Phase 5H — Compile / Tests / Runtime Verification: in progress.**  
 **Pre-Phase-6 audit — Phases 1–5: in progress.**
 
 Phase 5 extends the Phase 4 boundary with a dedicated assistant intelligence path that is intentionally separate from external engineering models. Rev Assistant must remain available independently of BYOK/local coding-model configuration, while engineering-model execution stays reserved for Phase 6.
@@ -107,6 +109,14 @@ Phase 5F is now underway with a first-party Rev Assistant sidebar surface. The i
 - Guide, Explain, Plan, and Diagnose modes wired to the existing assistant intent router.
 - Send, cancel, new-conversation, status, and keyboard-submit interactions.
 - Code-authoring and visual-analysis controls remain intentionally hidden until their explicit safety/runtime requirements are represented in the UI.
+
+### Phase 5G local conversation memory
+
+- Rev Assistant can restore previously persisted conversation snapshots through the platform service without exposing mutable internal state.
+- Desktop workbench memory is stored per-workspace with StorageTarget.MACHINE so project-aware conversation content is not synced to other devices automatically.
+- Persistence is bounded to a small number of recent conversations/messages and a total content budget to avoid unbounded workbench storage growth.
+- The Rev Assistant UI resumes the most recently updated local conversation after restart and New chat cleanly replaces the active conversation.
+- Corrupt or obsolete persisted data is ignored rather than blocking workbench startup.
 
 ## Architecture guarantees
 
