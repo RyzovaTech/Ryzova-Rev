@@ -103,6 +103,14 @@ suite('Ryzova Rev Core Architecture', function () {
 		assert.deepStrictEqual(registry.list().map(tool => tool.id), ['a-tool', 'z-tool']);
 		assert.strictEqual(registry.has('a-tool'), true);
 		assert.strictEqual(await registry.get('a-tool')!.execute('ok', context), 'ok');
+		registry.register({
+			id: ' spaced-tool ',
+			description: 'Spaced tool',
+			capabilities: [],
+			execute: async input => input,
+		});
+		assert.strictEqual(registry.get('spaced-tool')?.id, 'spaced-tool');
+		assert.ok(registry.list().some(tool => tool.id === 'spaced-tool'));
 		assert.throws(() => registry.register({
 			id: 'a-tool',
 			description: 'Duplicate',
@@ -111,7 +119,46 @@ suite('Ryzova Rev Core Architecture', function () {
 		}), /already registered/);
 	});
 
-	test('core service publishes project and execution state transitions', function () {
+	test('project refresh preserves an active execution and rejects overlapping execution starts', function () {
+		const service = new RevCoreService();
+		service.setProject({
+			id: 'project-1',
+			name: 'Project',
+			sourceKind: 'local',
+			roots: [],
+			gitRepositoryCount: 0,
+			hasDirtyWorkingCopies: false,
+			capturedAt: 100,
+		});
+		service.beginExecution('exec-1', 'Implement feature');
+
+		service.setProject({
+			id: 'project-1',
+			name: 'Project renamed',
+			sourceKind: 'git',
+			roots: [],
+			gitRepositoryCount: 1,
+			hasDirtyWorkingCopies: true,
+			capturedAt: 200,
+		});
+
+		assert.strictEqual(service.snapshot.phase, 'executing');
+		assert.strictEqual(service.snapshot.execution?.id, 'exec-1');
+		assert.strictEqual(service.snapshot.project?.name, 'Project renamed');
+		assert.throws(
+			() => service.beginExecution('exec-2', 'Overlap'),
+			/still active/,
+		);
+
+		service.clearProject();
+		assert.strictEqual(service.snapshot.phase, 'executing');
+		assert.strictEqual(service.snapshot.execution?.id, 'exec-1');
+		assert.strictEqual(service.snapshot.project, undefined);
+
+		service.dispose();
+	});
+
+		test('core service publishes project and execution state transitions', function () {
 		const service = new RevCoreService();
 		const phases: string[] = [];
 		const listener = service.onDidChangeState(snapshot => phases.push(snapshot.phase));
