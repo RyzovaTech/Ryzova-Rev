@@ -228,6 +228,50 @@ suite('Ryzova Rev Assistant', function () {
 		registration.dispose();
 	});
 
+	test('restores, orders, and deletes local conversation snapshots safely', function () {
+		const registry = new RevIntelligenceRegistryService();
+		const service = new RevAssistantService(registry, new TestAssistantContextService());
+		const deleted: string[] = [];
+		const listener = service.onDidDeleteConversation(id => deleted.push(id));
+
+		service.restoreConversation({
+			id: 'older',
+			createdAt: 10,
+			updatedAt: 20,
+			messages: [{
+				id: 'older-message',
+				role: 'user',
+				content: 'older',
+				createdAt: 15,
+			}],
+		});
+		service.restoreConversation({
+			id: 'newer',
+			createdAt: 30,
+			updatedAt: 40,
+			messages: [{
+				id: 'newer-message',
+				role: 'assistant',
+				content: 'newer',
+				createdAt: 40,
+			}],
+		});
+
+		assert.deepStrictEqual(service.listConversations().map(conversation => conversation.id), ['newer', 'older']);
+		assert.strictEqual(service.getConversation('newer')?.messages[0].content, 'newer');
+		assert.throws(() => service.restoreConversation({
+			id: '',
+			createdAt: 0,
+			updatedAt: 0,
+			messages: [],
+		}), /ID must not be empty/);
+		assert.strictEqual(service.deleteConversation('older'), true);
+		assert.deepStrictEqual(deleted, ['older']);
+
+		listener.dispose();
+		service.dispose();
+	});
+
 	test('assistant falls back to the next ranked model when the preferred route fails', async function () {
 		const registry = new RevIntelligenceRegistryService();
 		const provider = new TestIntelligenceProvider('builtin', 'rev-assistant', [
