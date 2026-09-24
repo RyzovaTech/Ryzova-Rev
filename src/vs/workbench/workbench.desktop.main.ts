@@ -115,6 +115,7 @@ registerSingleton(IUserDataInitializationService, new SyncDescriptor(UserDataIni
 
 // Ryzova Rev built-in intelligence
 import './contrib/ryzova/electron-browser/revBuiltInIntelligence.contribution.js';
+import './contrib/ryzova/browser/revAssistant.contribution.js';
 
 // Logs
 import './contrib/logs/electron-browser/logs.contribution.js';
