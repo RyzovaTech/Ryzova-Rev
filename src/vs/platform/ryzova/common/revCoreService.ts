@@ -52,7 +52,7 @@ export class RevCoreService extends Disposable implements IRevCoreService {
 		const hasActiveExecution = execution !== undefined && !isTerminalRevExecution(execution.state);
 		this.update({
 			...this._snapshot,
-			phase: hasActiveExecution ? 'executing' : this._snapshot.phase === 'error' ? 'error' : 'project-ready',
+			phase: this._snapshot.phase === 'error' ? 'error' : hasActiveExecution ? 'executing' : 'project-ready',
 			project,
 		});
 	}
@@ -62,7 +62,7 @@ export class RevCoreService extends Disposable implements IRevCoreService {
 		const hasActiveExecution = execution !== undefined && !isTerminalRevExecution(execution.state);
 		this.update({
 			...this._snapshot,
-			phase: hasActiveExecution ? 'executing' : this._snapshot.phase === 'error' ? 'error' : 'idle',
+			phase: this._snapshot.phase === 'error' ? 'error' : hasActiveExecution ? 'executing' : 'idle',
 			project: undefined,
 		});
 	}
