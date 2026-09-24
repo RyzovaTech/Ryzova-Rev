@@ -316,7 +316,7 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 		for (const active of this.activeRequests.values()) {
 			active.controller.abort();
 			if (active.provider?.cancel && active.providerRequestId) {
-				void active.provider.cancel(active.providerRequestId);
+				void active.provider.cancel(active.providerRequestId).catch(() => { /* best effort */ });
 			}
 		}
 		this.activeRequests.clear();
@@ -382,6 +382,14 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 						},
 						signal,
 					);
+					if (!emittedToken && response.content) {
+						emittedToken = true;
+						emit({
+							type: 'token',
+							requestId: assistantRequestId,
+							token: response.content,
+						});
+					}
 				} else {
 					response = await route.provider.generate(modelRequest, signal);
 					if (response.content) {
