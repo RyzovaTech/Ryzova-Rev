@@ -385,6 +385,7 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 			});
 
 			let emittedToken = false;
+			let streamedContent = '';
 			try {
 				const messages = await buildMessages(route);
 				if (signal.aborted) {
@@ -405,6 +406,7 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 						event => {
 							if (event.type === 'token' && event.token) {
 								emittedToken = true;
+								streamedContent += event.token;
 								emit({
 									type: 'token',
 									requestId: assistantRequestId,
@@ -434,6 +436,9 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 					}
 				}
 
+				if (!response.content && streamedContent) {
+					response = { ...response, content: streamedContent };
+				}
 				return { route, response };
 			} catch (error) {
 				if (signal.aborted || isRevAssistantCancellationError(error)) {
