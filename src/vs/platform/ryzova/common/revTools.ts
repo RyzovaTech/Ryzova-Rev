@@ -50,15 +50,15 @@ export class RevToolRegistryService implements IRevToolRegistryService {
 	}
 
 	unregister(id: string): boolean {
-		return this.tools.delete(id);
+		return this.tools.delete(id.trim());
 	}
 
 	get(id: string): IRevToolDefinition | undefined {
-		return this.tools.get(id);
+		return this.tools.get(id.trim());
 	}
 
 	has(id: string): boolean {
-		return this.tools.has(id);
+		return this.tools.has(id.trim());
 	}
 
 	list(): readonly IRevToolDefinition[] {
