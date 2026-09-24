@@ -2,7 +2,7 @@
 
 Ryzova Rev is a local-first desktop software engineering workspace being developed by RyzovaTech. It uses the open-source Code - OSS codebase as its editor and desktop foundation, while Ryzova Rev adds its own product identity and an AI engineering layer.
 
-> **Project status:** active development. The current repository contains the Code - OSS foundation and the first Ryzova Rev product-branding layer. AI assistant, engineering-agent, verification, integrated preview, packaging, and release work are being developed in later roadmap phases.
+> **Project status:** active development. Phases 1–5 now contain the Code - OSS foundation, Ryzova Rev branding, validated local development build, Rev core architecture, and the first complete Rev Assistant/built-in intelligence stack. Engineering agents, verification, integrated preview, packaging, and release work remain later roadmap phases.
 
 ## Product direction
 
