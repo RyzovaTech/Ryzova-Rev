@@ -115,6 +115,17 @@ Verified layers:
    - Closing/moving the Rev Assistant view during an active turn could leave inference running with a callback targeting a disposed UI instance.
    - Fixed by cancelling the active assistant request on view disposal and ignoring late stream events while disposed.
 
+
+10. **Built-in runtime request identity / cancellation bookkeeping**
+   - The local runtime previously allowed another stream call to reuse the same request ID while that ID was already active, risking collision in active-stream bookkeeping.
+   - Unknown cancellation IDs were also added to the cancellation set even when no matching request existed.
+   - Fixed by rejecting every concurrent runtime stream while one is active and making unknown cancellation a no-op.
+
+11. **Stream-only provider finalization**
+   - The assistant UI could display streamed tokens correctly while a provider returned an empty final response body; the persisted assistant message would then be empty.
+   - Fixed by accumulating visible streamed content and using it as the final assistant content when the provider's terminal payload is empty.
+   - Added regression coverage.
+
 ## Inherited CI failures that are not Rev defects
 
 The following failures have appeared repeatedly in upstream Code - OSS suites and do not point into Ryzova Phase 1–5 source:
