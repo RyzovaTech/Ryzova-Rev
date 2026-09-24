@@ -1,0 +1,185 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) RyzovaTech.
+ *  SPDX-License-Identifier: GPL-3.0-only
+ *--------------------------------------------------------------------------------------------*/
+
+.rev-assistant-view {
+	padding: 0 !important;
+}
+
+.rev-assistant-shell {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+	background: var(--vscode-sideBar-background);
+	color: var(--vscode-foreground);
+}
+
+.rev-assistant-toolbar {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 8px;
+	border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
+}
+
+.rev-assistant-intent {
+	flex: 1;
+	min-width: 0;
+	height: 28px;
+	padding: 0 6px;
+	border: 1px solid var(--vscode-dropdown-border, transparent);
+	border-radius: 4px;
+	color: var(--vscode-dropdown-foreground);
+	background: var(--vscode-dropdown-background);
+}
+
+.rev-assistant-status {
+	padding: 5px 10px;
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.rev-assistant-messages {
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+	padding: 10px;
+}
+
+.rev-assistant-empty {
+	max-width: 460px;
+	margin: 28px auto;
+	text-align: center;
+	color: var(--vscode-descriptionForeground);
+}
+
+.rev-assistant-empty h3 {
+	margin: 0 0 8px;
+	color: var(--vscode-foreground);
+	font-size: 15px;
+	font-weight: 600;
+}
+
+.rev-assistant-empty p {
+	margin: 0;
+	line-height: 1.5;
+}
+
+.rev-assistant-message {
+	margin: 0 0 12px;
+}
+
+.rev-assistant-message-role {
+	margin-bottom: 4px;
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--vscode-descriptionForeground);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.rev-assistant-message-body {
+	padding: 8px 10px;
+	border: 1px solid var(--vscode-widget-border, transparent);
+	border-radius: 6px;
+	line-height: 1.45;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	background: var(--vscode-editorWidget-background);
+}
+
+.rev-assistant-message.user .rev-assistant-message-body {
+	background: var(--vscode-input-background);
+}
+
+.rev-assistant-message.streaming .rev-assistant-message-body::after {
+	content: '▋';
+	margin-left: 2px;
+	opacity: 0.65;
+}
+
+.rev-assistant-composer {
+	padding: 8px;
+	border-top: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
+}
+
+.rev-assistant-input {
+	display: block;
+	box-sizing: border-box;
+	width: 100%;
+	min-height: 72px;
+	max-height: 220px;
+	resize: vertical;
+	padding: 8px;
+	border: 1px solid var(--vscode-input-border, transparent);
+	border-radius: 5px;
+	outline: none;
+	color: var(--vscode-input-foreground);
+	background: var(--vscode-input-background);
+	font-family: var(--vscode-font-family);
+	font-size: var(--vscode-font-size);
+}
+
+.rev-assistant-input:focus {
+	border-color: var(--vscode-focusBorder);
+}
+
+.rev-assistant-actions {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	margin-top: 7px;
+}
+
+.rev-assistant-shortcut {
+	min-width: 0;
+	font-size: 10px;
+	color: var(--vscode-descriptionForeground);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.rev-assistant-action-buttons {
+	display: flex;
+	gap: 6px;
+}
+
+.rev-assistant-button {
+	height: 28px;
+	padding: 0 10px;
+	border: 1px solid transparent;
+	border-radius: 4px;
+	font: inherit;
+	cursor: pointer;
+}
+
+.rev-assistant-button.primary {
+	color: var(--vscode-button-foreground);
+	background: var(--vscode-button-background);
+}
+
+.rev-assistant-button.primary:hover:not(:disabled) {
+	background: var(--vscode-button-hoverBackground);
+}
+
+.rev-assistant-button.secondary {
+	color: var(--vscode-button-secondaryForeground);
+	background: var(--vscode-button-secondaryBackground);
+}
+
+.rev-assistant-button.secondary:hover:not(:disabled) {
+	background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.rev-assistant-button:disabled {
+	cursor: default;
+	opacity: 0.5;
+}

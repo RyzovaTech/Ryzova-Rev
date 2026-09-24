@@ -9,7 +9,8 @@ This directory is the stable boundary between the Code - OSS platform and Ryzova
 **Phase 5B — Built-in Local Model Runtime: complete.**  
 **Phase 5C — Model Catalog + Routing: complete.**  
 **Phase 5D — Project / Context Awareness: complete.**  
-**Phase 5E — Streaming / Cancellation / Error Handling: complete.**
+**Phase 5E — Streaming / Cancellation / Error Handling: complete.**  
+**Phase 5F — Rev Assistant Workbench UI: in progress.**
 
 Phase 5 extends the Phase 4 boundary with a dedicated assistant intelligence path that is intentionally separate from external engineering models. Rev Assistant must remain available independently of BYOK/local coding-model configuration, while engineering-model execution stays reserved for Phase 6.
 
@@ -95,6 +96,16 @@ Phase 5B adds the on-device execution path: Rev can discover, download, load, st
 - Structured RevAssistantError codes distinguish cancellation, busy conversations, no-route conditions, provider failures, stream failures, timeouts, and exhausted fallback routes.
 - Provider/UI event-consumer failures are isolated from the inference turn, while runtime errors are normalized into retryability-aware assistant events.
 - Existing non-streaming ask() callers use the same execution path as streaming callers, preventing cancellation/fallback behavior from diverging between APIs.
+
+### Phase 5F workbench UI
+
+Phase 5F is now underway with a first-party Rev Assistant sidebar surface. The initial workbench shell connects directly to the existing Rev Assistant service and exposes project guidance, explanation, planning, diagnosis, live token streaming, cancellation, and conversation reset without granting Phase 6 engineering-tool execution.
+
+- Dedicated Rev Assistant activity-bar/sidebar container.
+- Streaming conversation transcript with a non-persistent partial-response surface.
+- Guide, Explain, Plan, and Diagnose modes wired to the existing assistant intent router.
+- Send, cancel, new-conversation, status, and keyboard-submit interactions.
+- Code-authoring and visual-analysis controls remain intentionally hidden until their explicit safety/runtime requirements are represented in the UI.
 
 ## Architecture guarantees
 
