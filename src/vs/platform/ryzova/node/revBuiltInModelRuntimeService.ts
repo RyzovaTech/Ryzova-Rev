@@ -203,7 +203,10 @@ export class RevBuiltInModelRuntimeService extends Disposable implements IRevBui
 			this._activeRequestId = undefined;
 			if (isCancellationError(error)) {
 				this._onDidStreamEvent.fire({ type: 'cancelled', requestId: request.requestId });
-				this.setStatus({ state: 'ready', supported: true, activeModelAlias: request.modelAlias });
+				const activeModelAlias = this.currentActiveModelAlias();
+				this.setStatus(activeModelAlias
+					? { state: 'ready', supported: true, activeModelAlias }
+					: { state: 'idle', supported: true });
 			} else {
 				this.fail(error, request.modelAlias);
 			}
