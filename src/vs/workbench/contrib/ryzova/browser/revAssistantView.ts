@@ -51,6 +51,7 @@ export class RevAssistantView extends ViewPane {
 
 	private activeRequestId: string | undefined;
 	private streamingText = '';
+	private disposed = false;
 
 	constructor(
 		options: IViewletViewOptions,
@@ -185,12 +186,17 @@ export class RevAssistantView extends ViewPane {
 		} finally {
 			this.activeRequestId = undefined;
 			this.streamingText = '';
-			this.updateControls();
-			this.inputElement.focus();
+			if (!this.disposed) {
+				this.updateControls();
+				this.inputElement.focus();
+			}
 		}
 	}
 
 	private handleStreamEvent(event: RevAssistantStreamEvent): void {
+		if (this.disposed) {
+			return;
+		}
 		switch (event.type) {
 			case 'started':
 				this.activeRequestId = event.requestId;
@@ -313,5 +319,14 @@ export class RevAssistantView extends ViewPane {
 		this.cancelButton.disabled = !running;
 		this.newChatButton.disabled = running;
 		this.intentElement.disabled = running;
+	}
+
+	override dispose(): void {
+		this.disposed = true;
+		const requestId = this.activeRequestId;
+		if (requestId) {
+			void this.assistantService.cancel(requestId);
+		}
+		super.dispose();
 	}
 }
