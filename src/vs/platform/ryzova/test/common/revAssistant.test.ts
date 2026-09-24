@@ -7,6 +7,7 @@
 import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import { RevAssistantService } from '../../common/revAssistantService.js';
+import { buildRevAssistantContextSnapshot, createRevAssistantContextContribution, IRevAssistantContextBuildRequest, IRevAssistantContextService } from '../../common/revAssistantContext.js';
 import {
 	IRevIntelligenceAvailability,
 	IRevIntelligenceModelDescriptor,
@@ -20,6 +21,7 @@ import { RevIntelligenceRegistryService } from '../../common/revIntelligenceRegi
 class TestIntelligenceProvider implements IRevIntelligenceProvider {
 	readonly descriptor: IRevIntelligenceProviderDescriptor;
 	readonly attempts: string[] = [];
+	readonly requests: IRevIntelligenceRequest[] = [];
 
 	constructor(
 		id: string,
@@ -27,12 +29,13 @@ class TestIntelligenceProvider implements IRevIntelligenceProvider {
 		private readonly modelList: readonly IRevIntelligenceModelDescriptor[],
 		private readonly prefix = 'reply',
 		private readonly failingModelIds: ReadonlySet<string> = new Set(),
+		kind?: IRevIntelligenceProviderDescriptor['kind'],
 	) {
 		this.descriptor = {
 			id,
 			displayName: id,
 			scope,
-			kind: scope === 'rev-assistant' ? 'built-in-local' : 'external',
+			kind: kind ?? (scope === 'rev-assistant' ? 'built-in-local' : 'external'),
 		};
 	}
 
@@ -46,6 +49,7 @@ class TestIntelligenceProvider implements IRevIntelligenceProvider {
 
 	async generate(request: IRevIntelligenceRequest): Promise<IRevIntelligenceResponse> {
 		this.attempts.push(request.model.id);
+		this.requests.push(request);
 		if (this.failingModelIds.has(request.model.id)) {
 			throw new Error(`test failure: ${request.model.id}`);
 		}
@@ -54,6 +58,24 @@ class TestIntelligenceProvider implements IRevIntelligenceProvider {
 			modelId: request.model.id,
 			content: `${this.prefix}:${request.task}:${request.messages.at(-1)?.content ?? ''}`,
 		};
+	}
+}
+
+class TestAssistantContextService implements IRevAssistantContextService {
+	declare readonly _serviceBrand: undefined;
+	readonly includeWorkspaceContents: boolean[] = [];
+
+	async buildContext(request: IRevAssistantContextBuildRequest) {
+		this.includeWorkspaceContents.push(request.includeWorkspaceContents);
+		return buildRevAssistantContextSnapshot(undefined, [
+			createRevAssistantContextContribution(
+				'test-project-context',
+				'project',
+				'Test project context',
+				'local workspace context',
+				100,
+			),
+		], request, 1);
 	}
 }
 
@@ -131,7 +153,7 @@ suite('Ryzova Rev Assistant', function () {
 			{ id: 'vision', providerId: 'builtin', displayName: 'Vision', task: 'vision', supportsVision: true },
 			{ id: 'code', providerId: 'builtin', displayName: 'Code Helper', task: 'code-helper' },
 		]));
-		const service = new RevAssistantService(registry);
+		const service = new RevAssistantService(registry, new TestAssistantContextService());
 		const conversation = service.createConversation('conversation-1');
 
 		const reply = await service.ask({
@@ -157,7 +179,7 @@ suite('Ryzova Rev Assistant', function () {
 			{ id: 'fallback', providerId: 'builtin', displayName: 'Fallback', task: 'assistant', priority: 90 },
 		], 'reply', new Set(['primary']));
 		const registration = registry.registerProvider(provider);
-		const service = new RevAssistantService(registry);
+		const service = new RevAssistantService(registry, new TestAssistantContextService());
 		service.createConversation('conversation-fallback');
 
 		const reply = await service.ask({
@@ -174,6 +196,44 @@ suite('Ryzova Rev Assistant', function () {
 		registration.dispose();
 	});
 
+	test('assistant rebuilds project context per fallback route to keep workspace data local', async function () {
+		const registry = new RevIntelligenceRegistryService();
+		const localProvider = new TestIntelligenceProvider('local', 'rev-assistant', [{
+			id: 'local-model',
+			providerId: 'local',
+			displayName: 'Local',
+			task: 'assistant',
+			priority: 100,
+		}], 'reply', new Set(['local-model']), 'built-in-local');
+		const remoteProvider = new TestIntelligenceProvider('remote', 'rev-assistant', [{
+			id: 'remote-model',
+			providerId: 'remote',
+			displayName: 'Remote',
+			task: 'assistant',
+			priority: 90,
+		}], 'reply', new Set(), 'built-in-remote');
+		const localRegistration = registry.registerProvider(localProvider);
+		const remoteRegistration = registry.registerProvider(remoteProvider);
+		const contextService = new TestAssistantContextService();
+		const service = new RevAssistantService(registry, contextService);
+		service.createConversation('conversation-private-context');
+
+		const reply = await service.ask({
+			conversationId: 'conversation-private-context',
+			content: 'Explain this project',
+			intent: 'explain',
+		});
+
+		assert.strictEqual(reply.modelId, 'remote-model');
+		assert.deepStrictEqual(contextService.includeWorkspaceContents, [true, false]);
+		assert.ok(localProvider.requests[0].messages.some(message => message.content.includes('local workspace context')));
+		assert.ok(!remoteProvider.requests[0].messages.some(message => message.content.includes('local workspace context')));
+
+		service.dispose();
+		localRegistration.dispose();
+		remoteRegistration.dispose();
+	});
+
 	test('code authoring requires explicit per-request opt-in', async function () {
 		const registry = new RevIntelligenceRegistryService();
 		const registration = registry.registerProvider(new TestIntelligenceProvider('builtin', 'rev-assistant', [{
@@ -182,7 +242,7 @@ suite('Ryzova Rev Assistant', function () {
 			displayName: 'Code Helper',
 			task: 'code-helper',
 		}]));
-		const service = new RevAssistantService(registry);
+		const service = new RevAssistantService(registry, new TestAssistantContextService());
 		service.createConversation('conversation-1');
 
 		await assert.rejects(() => service.ask({
@@ -212,7 +272,7 @@ suite('Ryzova Rev Assistant', function () {
 			task: 'vision',
 			supportsVision: true,
 		}]));
-		const service = new RevAssistantService(registry);
+		const service = new RevAssistantService(registry, new TestAssistantContextService());
 		service.createConversation('conversation-1');
 
 		const reply = await service.ask({

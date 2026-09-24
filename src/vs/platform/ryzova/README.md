@@ -7,7 +7,8 @@ This directory is the stable boundary between the Code - OSS platform and Ryzova
 **Phase 4 — Rev Core Architecture Layer: complete.**  
 **Phase 5 — Rev Assistant + Built-in Intelligence: in progress.**  
 **Phase 5B — Built-in Local Model Runtime: complete.**  
-**Phase 5C — Model Catalog + Routing: complete.**
+**Phase 5C — Model Catalog + Routing: complete.**  
+**Phase 5D — Project / Context Awareness: complete.**
 
 Phase 5 extends the Phase 4 boundary with a dedicated assistant intelligence path that is intentionally separate from external engineering models. Rev Assistant must remain available independently of BYOK/local coding-model configuration, while engineering-model execution stays reserved for Phase 6.
 
@@ -72,12 +73,24 @@ Phase 5B adds the on-device execution path: Rev can discover, download, load, st
 - Rev Assistant retries the next compatible route when inference fails, but never retries cancellation.
 - Routing behavior is deterministic and covered by unit tests, including variant aliases, context constraints, vision filtering, and inference fallback.
 
+### Phase 5D project / context awareness
+
+- `revAssistantContext.ts` defines provider-neutral context contracts, token estimates, privacy gating, and deterministic budget admission through the existing `revContext.ts` selector.
+- `workbench/services/ryzova/browser/revAssistantContextService.ts` is the narrow Code - OSS bridge for workspace identity, roots, active editor/selection, diagnostics, source-control state, dirty working copies, top-level structure, and a small ranked set of already-open project files.
+- Rev Core's existing project snapshot is refreshed from Code - OSS workspace/editor/SCM/working-copy services instead of creating a duplicate project-state system.
+- Active selections and nearby active-file source are prioritized, while project structure and related open files remain bounded; Rev never dumps the full repository into a model prompt.
+- Context admission reserves output/base-prompt capacity and caps automatic project context independently of the model's maximum context window.
+- Workspace-derived context is explicitly marked as untrusted data so source files cannot silently become assistant instructions.
+- Automatic workspace contents are attached only to `built-in-local` Rev Assistant routes. A fallback to a remote/external assistant route rebuilds the request without automatic project contents until an explicit data-sharing policy exists.
+- Phase 5D only supplies read-only understanding context. It does not grant filesystem, terminal, Git, or engineering-tool execution; those boundaries remain reserved for Phase 6.
+
 ## Architecture guarantees
 
 - Rev owns its product-specific state under `src/vs/platform/ryzova/`.
 - Code - OSS remains the execution substrate for editor, filesystem, terminal, Git, task, debug, extension, and workspace capabilities.
 - Engineering execution follows an explicit lifecycle rather than ad-hoc boolean flags.
 - Context admission is deterministic and budget-aware.
+- Project awareness is sourced from existing Code - OSS services and automatic file content remains local-only by default.
 - Mutating or externally visible capabilities require an explicit permission decision.
 - Tools are registered behind a stable registry contract before agent execution is introduced.
 - The workbench integration remains a narrow side-effect registration import.
