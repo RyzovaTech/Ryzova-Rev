@@ -51,7 +51,6 @@ export class RevAssistantView extends ViewPane {
 
 	private activeRequestId: string | undefined;
 	private streamingText = '';
-	private ownerDocument: Document | undefined;
 	private disposed = false;
 
 	constructor(
@@ -80,22 +79,22 @@ export class RevAssistantView extends ViewPane {
 	protected override renderBody(container: HTMLElement): void {
 		super.renderBody(container);
 		container.classList.add('rev-assistant-view');
-		this.ownerDocument = container.ownerDocument;
+		const ownerDocument = container.ownerDocument;
 
 		const shell = append(container, $('.rev-assistant-shell'));
 		const toolbar = append(shell, $('.rev-assistant-toolbar'));
 
-		this.intentElement = append(toolbar, this.ownerDocument.createElement('select'));
+		this.intentElement = append(toolbar, ownerDocument.createElement('select'));
 		this.intentElement.className = 'rev-assistant-intent';
 		this.intentElement.setAttribute('aria-label', 'Rev Assistant mode');
 		for (const intent of UI_INTENTS) {
-			const option = this.ownerDocument.createElement('option');
+			const option = ownerDocument.createElement('option');
 			option.value = intent.value;
 			option.textContent = intent.label;
 			this.intentElement.appendChild(option);
 		}
 
-		this.newChatButton = append(toolbar, this.ownerDocument.createElement('button'));
+		this.newChatButton = append(toolbar, ownerDocument.createElement('button'));
 		this.newChatButton.className = 'rev-assistant-button secondary';
 		this.newChatButton.type = 'button';
 		this.newChatButton.textContent = 'New chat';
@@ -109,7 +108,7 @@ export class RevAssistantView extends ViewPane {
 		this.messagesElement.setAttribute('aria-live', 'polite');
 
 		const composer = append(shell, $('.rev-assistant-composer'));
-		this.inputElement = append(composer, this.ownerDocument.createElement('textarea'));
+		this.inputElement = append(composer, ownerDocument.createElement('textarea'));
 		this.inputElement.className = 'rev-assistant-input';
 		this.inputElement.rows = 4;
 		this.inputElement.placeholder = 'Ask Rev about this project…';
@@ -120,12 +119,12 @@ export class RevAssistantView extends ViewPane {
 		hint.textContent = 'Ctrl/Cmd+Enter to send';
 
 		const actionButtons = append(actions, $('.rev-assistant-action-buttons'));
-		this.cancelButton = append(actionButtons, this.ownerDocument.createElement('button'));
+		this.cancelButton = append(actionButtons, ownerDocument.createElement('button'));
 		this.cancelButton.className = 'rev-assistant-button secondary';
 		this.cancelButton.type = 'button';
 		this.cancelButton.textContent = 'Cancel';
 
-		this.sendButton = append(actionButtons, this.ownerDocument.createElement('button'));
+		this.sendButton = append(actionButtons, ownerDocument.createElement('button'));
 		this.sendButton.className = 'rev-assistant-button primary';
 		this.sendButton.type = 'button';
 		this.sendButton.textContent = 'Send';
