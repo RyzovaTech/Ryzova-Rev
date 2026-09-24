@@ -89,7 +89,7 @@ export class RevIntelligenceRegistryService implements IRevIntelligenceRegistryS
 					if (requireVision && model.supportsVision !== true) {
 						continue;
 					}
-					if (minimumContextWindow > 0 && model.contextWindow !== undefined && model.contextWindow < minimumContextWindow) {
+					if (minimumContextWindow > 0 && (model.contextWindow === undefined || model.contextWindow < minimumContextWindow)) {
 						continue;
 					}
 					candidates.push({ provider, model });
