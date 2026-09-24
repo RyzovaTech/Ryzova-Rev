@@ -48,17 +48,31 @@ export class RevCoreService extends Disposable implements IRevCoreService {
 	}
 
 	setProject(project: IRevProjectSnapshot): void {
+		const execution = this._snapshot.execution;
+		const hasActiveExecution = execution !== undefined && !isTerminalRevExecution(execution.state);
 		this.update({
-			phase: 'project-ready',
+			...this._snapshot,
+			phase: hasActiveExecution ? 'executing' : this._snapshot.phase === 'error' ? 'error' : 'project-ready',
 			project,
 		});
 	}
 
 	clearProject(): void {
-		this.update({ phase: 'idle' });
+		const execution = this._snapshot.execution;
+		const hasActiveExecution = execution !== undefined && !isTerminalRevExecution(execution.state);
+		this.update({
+			...this._snapshot,
+			phase: hasActiveExecution ? 'executing' : this._snapshot.phase === 'error' ? 'error' : 'idle',
+			project: undefined,
+		});
 	}
 
 	beginExecution(id: string, request: string): IRevExecutionSnapshot {
+		const current = this._snapshot.execution;
+		if (current && !isTerminalRevExecution(current.state)) {
+			throw new Error(`Cannot begin Rev execution ${id} because execution ${current.id} is still active.`);
+		}
+
 		const execution = createRevExecutionSnapshot(id, request);
 		this.update({
 			phase: 'executing',
@@ -111,4 +125,8 @@ export class RevCoreService extends Disposable implements IRevCoreService {
 		this._snapshot = snapshot;
 		this._onDidChangeState.fire(snapshot);
 	}
+}
+
+function isTerminalRevExecution(state: RevExecutionState): boolean {
+	return state === 'completed' || state === 'failed' || state === 'cancelled';
 }
