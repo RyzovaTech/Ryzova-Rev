@@ -20,7 +20,7 @@ import {
 } from '../../common/revIntelligence.js';
 import { RevIntelligenceRegistryService } from '../../common/revIntelligenceRegistry.js';
 
-type TestStreamBehavior = 'fail-before-token' | 'fail-after-token' | 'wait-for-cancel';
+type TestStreamBehavior = 'fail-before-token' | 'fail-after-token' | 'wait-for-cancel' | 'tokens-empty-final';
 
 class TestIntelligenceProvider implements IRevIntelligenceProvider {
 	readonly descriptor: IRevIntelligenceProviderDescriptor;
@@ -96,6 +96,15 @@ class TestIntelligenceProvider implements IRevIntelligenceProvider {
 		if (behavior === 'fail-after-token') {
 			onEvent({ type: 'token', requestId: request.requestId, token: 'partial' });
 			throw new Error(`stream failed after output: ${request.model.id}`);
+		}
+		if (behavior === 'tokens-empty-final') {
+			onEvent({ type: 'token', requestId: request.requestId, token: 'streamed ' });
+			onEvent({ type: 'token', requestId: request.requestId, token: 'answer' });
+			return {
+				requestId: request.requestId,
+				modelId: request.model.id,
+				content: '',
+			};
 		}
 
 		return new Promise<IRevIntelligenceResponse>((_resolve, reject) => {
@@ -405,6 +414,35 @@ suite('Ryzova Rev Assistant', function () {
 		assert.ok(events.every(event => event.requestId === 'assistant-request-1'));
 		assert.strictEqual(reply.conversation.messages.length, 2);
 		assert.strictEqual(service.isRunning('assistant-request-1'), false);
+
+		service.dispose();
+		registration.dispose();
+	});
+
+	test('persists streamed output when a provider returns an empty final payload', async function () {
+		const registry = new RevIntelligenceRegistryService();
+		const provider = new TestIntelligenceProvider(
+			'builtin',
+			'rev-assistant',
+			[{ id: 'stream-only', providerId: 'builtin', displayName: 'Stream Only', task: 'assistant' }],
+			'reply',
+			new Set(),
+			undefined,
+			new Map([['stream-only', 'tokens-empty-final']]),
+		);
+		const registration = registry.registerProvider(provider);
+		const service = new RevAssistantService(registry, new TestAssistantContextService());
+		service.createConversation('conversation-stream-only');
+
+		const reply = await service.stream({
+			requestId: 'assistant-request-stream-only',
+			conversationId: 'conversation-stream-only',
+			content: 'Explain streamed output',
+			intent: 'explain',
+		});
+
+		assert.strictEqual(reply.message.content, 'streamed answer');
+		assert.strictEqual(reply.conversation.messages.at(-1)?.content, 'streamed answer');
 
 		service.dispose();
 		registration.dispose();
