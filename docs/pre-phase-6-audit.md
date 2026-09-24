@@ -97,6 +97,24 @@ Verified layers:
    - The root README still described the repository as branding-only.
    - Updated to match the actual Phase 1–5 implementation state.
 
+
+6. **Rev Core project-refresh state corruption**
+   - Phase 5D project refreshes call the shared Rev Core project setter. The original setter replaced the whole core snapshot, which could erase an in-flight Phase 4 execution just because the active editor/workspace state changed.
+   - Fixed by preserving execution/error state across project refresh and project-clear operations.
+   - Starting a second execution while the first is non-terminal is now rejected explicitly.
+
+7. **Tool registry ID normalization**
+   - Tool IDs were trimmed for the registry key but the original untrimmed definition was stored, so lookup/list output could disagree about a tool's identity.
+   - Fixed by storing the normalized ID and adding regression coverage.
+
+8. **Context-window constraint correctness**
+   - A route with unknown context capacity could pass a request that explicitly required a minimum context window.
+   - Fixed so constrained routing only admits models with a known context window large enough for the request.
+
+9. **Assistant view disposal**
+   - Closing/moving the Rev Assistant view during an active turn could leave inference running with a callback targeting a disposed UI instance.
+   - Fixed by cancelling the active assistant request on view disposal and ignoring late stream events while disposed.
+
 ## Inherited CI failures that are not Rev defects
 
 The following failures have appeared repeatedly in upstream Code - OSS suites and do not point into Ryzova Phase 1–5 source:
