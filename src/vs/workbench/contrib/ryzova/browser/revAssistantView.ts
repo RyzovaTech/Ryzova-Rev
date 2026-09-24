@@ -79,20 +79,21 @@ export class RevAssistantView extends ViewPane {
 		super.renderBody(container);
 		container.classList.add('rev-assistant-view');
 
+		const doc = container.ownerDocument;
 		const shell = append(container, $('.rev-assistant-shell'));
 		const toolbar = append(shell, $('.rev-assistant-toolbar'));
 
-		this.intentElement = append(toolbar, document.createElement('select'));
+		this.intentElement = append(toolbar, doc.createElement('select'));
 		this.intentElement.className = 'rev-assistant-intent';
 		this.intentElement.setAttribute('aria-label', 'Rev Assistant mode');
 		for (const intent of UI_INTENTS) {
-			const option = document.createElement('option');
+			const option = doc.createElement('option');
 			option.value = intent.value;
 			option.textContent = intent.label;
 			this.intentElement.appendChild(option);
 		}
 
-		this.newChatButton = append(toolbar, document.createElement('button'));
+		this.newChatButton = append(toolbar, doc.createElement('button'));
 		this.newChatButton.className = 'rev-assistant-button secondary';
 		this.newChatButton.type = 'button';
 		this.newChatButton.textContent = 'New chat';
@@ -104,9 +105,10 @@ export class RevAssistantView extends ViewPane {
 		this.messagesElement = append(shell, $('.rev-assistant-messages'));
 		this.messagesElement.setAttribute('role', 'log');
 		this.messagesElement.setAttribute('aria-live', 'polite');
+		this.messagesElement.setAttribute('aria-busy', 'false');
 
 		const composer = append(shell, $('.rev-assistant-composer'));
-		this.inputElement = append(composer, document.createElement('textarea'));
+		this.inputElement = append(composer, doc.createElement('textarea'));
 		this.inputElement.className = 'rev-assistant-input';
 		this.inputElement.rows = 4;
 		this.inputElement.placeholder = 'Ask Rev about this project…';
@@ -117,12 +119,12 @@ export class RevAssistantView extends ViewPane {
 		hint.textContent = 'Ctrl/Cmd+Enter to send';
 
 		const actionButtons = append(actions, $('.rev-assistant-action-buttons'));
-		this.cancelButton = append(actionButtons, document.createElement('button'));
+		this.cancelButton = append(actionButtons, doc.createElement('button'));
 		this.cancelButton.className = 'rev-assistant-button secondary';
 		this.cancelButton.type = 'button';
 		this.cancelButton.textContent = 'Cancel';
 
-		this.sendButton = append(actionButtons, document.createElement('button'));
+		this.sendButton = append(actionButtons, doc.createElement('button'));
 		this.sendButton.className = 'rev-assistant-button primary';
 		this.sendButton.type = 'button';
 		this.sendButton.textContent = 'Send';
@@ -193,6 +195,7 @@ export class RevAssistantView extends ViewPane {
 			case 'started':
 				this.activeRequestId = event.requestId;
 				this.statusElement.textContent = 'Thinking…';
+				this.messagesElement?.setAttribute('aria-busy', 'true');
 				this.updateControls();
 				break;
 			case 'route':
@@ -203,19 +206,28 @@ export class RevAssistantView extends ViewPane {
 				this.renderCurrentConversation();
 				break;
 			case 'completed':
+				this.activeRequestId = undefined;
 				this.statusElement.textContent = 'Ready';
 				this.streamingText = '';
+				this.messagesElement?.setAttribute('aria-busy', 'false');
 				this.renderConversation(event.reply.conversation);
+				this.updateControls();
 				break;
 			case 'cancelled':
+				this.activeRequestId = undefined;
 				this.statusElement.textContent = 'Cancelled';
 				this.streamingText = '';
+				this.messagesElement?.setAttribute('aria-busy', 'false');
 				this.renderCurrentConversation();
+				this.updateControls();
 				break;
 			case 'error':
+				this.activeRequestId = undefined;
 				this.statusElement.textContent = event.message;
 				this.streamingText = '';
+				this.messagesElement?.setAttribute('aria-busy', 'false');
 				this.renderCurrentConversation();
+				this.updateControls();
 				break;
 		}
 	}
