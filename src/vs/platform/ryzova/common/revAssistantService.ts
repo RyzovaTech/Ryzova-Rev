@@ -418,6 +418,9 @@ export class RevAssistantService extends Disposable implements IRevAssistantServ
 					);
 				}
 
+				if (!normalized.retryable) {
+					throw normalized;
+				}
 				lastError = normalized;
 			} finally {
 				if (active.provider === route.provider && active.providerRequestId === providerRequestId) {
