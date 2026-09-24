@@ -86,7 +86,7 @@ class RevAssistantMemoryContribution extends Disposable implements IWorkbenchCon
 
 		for (const conversation of conversations.slice(0, MAX_CONVERSATIONS)) {
 			const candidateMessages = conversation.messages.slice(-MAX_MESSAGES_PER_CONVERSATION);
-			const selected = [];
+			const selected: Array<IRevAssistantConversation['messages'][number]> = [];
 			for (let index = candidateMessages.length - 1; index >= 0; index--) {
 				const message = candidateMessages[index];
 				if (message.content.length > remainingChars) {
