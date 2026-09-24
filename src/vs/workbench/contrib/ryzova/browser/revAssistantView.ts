@@ -66,7 +66,7 @@ export class RevAssistantView extends ViewPane {
 		@IRevAssistantService private readonly assistantService: IRevAssistantService,
 	) {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
-		this.conversationId = this.assistantService.createConversation().id;
+		this.conversationId = this.assistantService.listConversations()[0]?.id ?? this.assistantService.createConversation().id;
 
 		this._register(this.assistantService.onDidChangeConversation(conversation => {
 			if (conversation.id === this.conversationId) {
