@@ -13,7 +13,9 @@ This directory is the stable boundary between the Code - OSS platform and Ryzova
 **Phase 5F — Rev Assistant Workbench UI: complete.**  
 **Phase 5G — Local Conversation Memory: complete.**  
 **Phase 5H — Compile / Tests / Runtime Verification: in progress.**  
-**Pre-Phase-6 audit — Phases 1–5: in progress.**
+**Pre-Phase-6 audit — Phases 1–5: complete.**  
+**Phase 6 — Engineering Agent System: in progress.**  
+**Phase 6A — Engineering Provider Boundary: in progress.**
 
 Phase 5 extends the Phase 4 boundary with a dedicated assistant intelligence path that is intentionally separate from external engineering models. Rev Assistant must remain available independently of BYOK/local coding-model configuration, while engineering-model execution stays reserved for Phase 6.
 
@@ -118,6 +120,14 @@ Phase 5F adds a first-party Rev Assistant sidebar surface. The workbench shell c
 - Persistence is bounded to a small number of recent conversations/messages and a total content budget to avoid unbounded workbench storage growth.
 - The Rev Assistant UI resumes the most recently updated local conversation after restart and New chat cleanly replaces the active conversation.
 - Corrupt or obsolete persisted data is ignored rather than blocking workbench startup.
+
+### Phase 6A engineering provider boundary
+
+- `revEngineering.ts` defines engineering-only provider, model, task, request, response, streaming, and capability contracts.
+- `revEngineeringRegistry.ts` provides deterministic routing for engineering models independently of the Rev Assistant registry.
+- Engineering routing supports minimum-context, tool-calling, streaming, vision, and provider/model exclusion constraints.
+- Assistant providers and engineering providers live in separate registries, so a Rev Assistant model cannot be selected as an engineering route by accident.
+- Phase 6A does not execute project tools yet; orchestration, sessions, permissions, and tool execution arrive in the next Phase 6 subphases.
 
 ## Architecture guarantees
 

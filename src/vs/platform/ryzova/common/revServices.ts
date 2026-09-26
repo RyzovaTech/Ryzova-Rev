@@ -7,10 +7,12 @@
 import { InstantiationType, registerSingleton } from '../../instantiation/common/extensions.js';
 import { IRevAssistantService, RevAssistantService } from './revAssistantService.js';
 import { IRevCoreService, RevCoreService } from './revCoreService.js';
+import { IRevEngineeringRegistryService, RevEngineeringRegistryService } from './revEngineeringRegistry.js';
 import { IRevIntelligenceRegistryService, RevIntelligenceRegistryService } from './revIntelligenceRegistry.js';
 import { IRevToolRegistryService, RevToolRegistryService } from './revTools.js';
 
 registerSingleton(IRevCoreService, RevCoreService, InstantiationType.Delayed);
 registerSingleton(IRevToolRegistryService, RevToolRegistryService, InstantiationType.Delayed);
 registerSingleton(IRevIntelligenceRegistryService, RevIntelligenceRegistryService, InstantiationType.Delayed);
+registerSingleton(IRevEngineeringRegistryService, RevEngineeringRegistryService, InstantiationType.Delayed);
 registerSingleton(IRevAssistantService, RevAssistantService, InstantiationType.Delayed);
